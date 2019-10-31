@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "/home/dbaranec/projects/cudf"
+		},
+		{
+			"path": "/home/dbaranec/miniconda3/include"
 		}
 	]
 }
