@@ -120,12 +120,12 @@ void normalize_nans_and_zeros (cudf::size_type size,
   int start = tid + blkid * blksz;
   int step = blksz * gridsz;
 
-  for (int i=start; i<size; i+=step) {
-      /*
+  for (int i=start; i<size; i+=step) {      
+    /*
     if(!bit_mask::is_valid(in_valid, i)){
       continue;
-    }
-    */
+    } 
+    */   
     if(std::isnan(in_data[i])){
       out_data[i] = std::numeric_limits<Type>::quiet_NaN();
     } else if(in_data[i] == -0.0){
@@ -179,6 +179,8 @@ int main()
     float x = 0.0f / 0.0f;
     int yay = 10;
     yay++;
+
+    printf("WHEEEEEEEEEEEEEEEEEEEEE\n");
 
     // init stuff
     cuInit(0);    

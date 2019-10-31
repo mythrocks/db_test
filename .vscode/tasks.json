@@ -1,0 +1,22 @@
+{        
+   "tasks": [
+       {
+           "command": "make -j",
+           "isShellCommand": true,            
+           "label": "Makefile",
+           "showOutput": "always",
+           "group": {
+               "kind": "build",
+               "isDefault": true
+           },            
+           "args": [                
+           ],
+           "options": {
+               "cwd": "${workspaceFolder}"
+           },
+           "problemMatcher": [
+               "$gcc"
+           ]
+       }
+   ]
+}
