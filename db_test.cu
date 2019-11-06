@@ -350,7 +350,8 @@ using namespace cudf;
 
 /* --------------------------------------------------------------------------*/
 /**
-* @brief Functor called by the `type_dispatcher` in order to perform a copy if/else.
+* @brief Functor called by the `type_dispatcher` in order to perform a copy if/else
+*        with appropriate data types for lhs/rhs. 
 */
 /* ----------------------------------------------------------------------------*/
 struct copy_if_else_functor {   
@@ -388,7 +389,9 @@ unique_ptr<column> copy_if_else( column_view boolean_mask, column_view lhs, colu
                                  cudaStream_t stream = 0)
 {
    CUDF_EXPECTS(lhs.type() == rhs.type(), "Both columns must be of the same type");
-   CUDF_EXPECTS(boolean_mask.type() == data_type(BOOL8), "Boolean column must be of type BOOL8");
+   CUDF_EXPECTS(lhs.size() == rhs.size(), "Both columns must be of the size");
+   CUDF_EXPECTS(boolean_mask.type() == data_type(BOOL8), "Boolean mask column must be of type BOOL8");   
+   CUDF_EXPECTS(boolean_mask.size() == lhs.size(), "Boolean mask column must be the same size as lhs and rhs columns");
 
    // output
    std::unique_ptr<column> out = experimental::allocate_like(lhs, lhs.size(), experimental::mask_allocation_policy::RETAIN, mr);
@@ -408,6 +411,24 @@ unique_ptr<column> copy_if_else( column_view boolean_mask, column_view lhs, colu
 
 }  // namespace detail
 
+/**
+ * @brief   Returns a new column, where each element is selected from either @p lhs or 
+ *          @p rhs based on the value of the corresponding element in @p boolean_mask
+ *
+ * Selects each element i in the output column from either @p rhs or @p lhs using the following rule:
+ *          output[i] = (boolean_mask[i] == true) ? lhs[i] : rhs[i]
+ *         
+ * @throws cudf::logic_error if lhs and rhs are not of the same type
+ * @throws cudf::logic_error if lhs and rhs are not of the same length
+ * @throws cudf::logic_error if boolean mask is not of type bool8
+ * @throws cudf::logic_error if boolean mask is not of the same length as lhs and rhs 
+ * @param[in] column_view representing "left (true) / right (false)" boolean for each element
+ * @param[in] left-hand column_view
+ * @param[in] right-hand column_view
+ * @param[in] mr resource for allocating device memory
+ *
+ * @returns new column with the selected elements
+ */
 unique_ptr<column> copy_if_else( column_view const& boolean_mask, column_view const& lhs, column_view const& rhs, 
                                  rmm::mr::device_memory_resource *mr = rmm::mr::get_default_resource())
 {
@@ -417,43 +438,54 @@ unique_ptr<column> copy_if_else( column_view const& boolean_mask, column_view co
 }  // namespace cudf
 
 
+// to keep names shorter
+#define wrapper cudf::test::fixed_width_column_wrapper
+using bool_wrapper = wrapper<cudf::experimental::bool8>;
+
+template<typename T>
+void copy_if_else_check(bool_wrapper const&  mask_w,
+                        wrapper<T> const&    lhs_w,
+                        wrapper<T> const&    rhs_w,
+                        wrapper<T> const&    expected_w)
+{
+   // construct input views
+   column mask(mask_w);
+   column_view mask_v(mask);
+   //
+   column lhs(lhs_w);
+   column_view lhs_v = lhs.view();
+   //
+   column rhs(rhs_w);
+   column_view rhs_v = rhs.view();
+   //
+   column expected(expected_w);
+   column_view expected_v = expected.view();
+
+   // get the result
+   auto out = cudf::copy_if_else(mask_v, lhs_v, rhs_v);
+   column_view out_v = out->view();
+
+   // compare
+   cudf::test::expect_columns_equal(out_v, expected_v);
+}
 
 void copy_if_else_test()
 {
-   cudf::test::fixed_width_column_wrapper<cudf::experimental::bool8> mask_w { 
-      cudf::experimental::bool8{true}, 
-      cudf::experimental::bool8{true},
-      cudf::experimental::bool8{false},
-      cudf::experimental::bool8{true},
-      cudf::experimental::bool8{true},
-      };
-   column mask(mask_w);
-   column_view mask_v(mask);
-
-   cudf::test::fixed_width_column_wrapper<int> lhs_w{ 5, 5, 5, 5, 5 };
-   column lhs(lhs_w);
-   column_view lhs_v = lhs.view();
-
-   cudf::test::fixed_width_column_wrapper<int> rhs_w{ 6, 6, 6, 6, 6 };       
-   column rhs(rhs_w);
-   column_view rhs_v = rhs.view();
-
-   auto out = cudf::copy_if_else(mask_v, lhs_v, rhs_v);
-   column_view out_v = out->view();
-   int yay[16];
-   cudaMemcpy(yay, out_v.begin<int>(), sizeof(int) * out_v.size(), cudaMemcpyDeviceToHost);
-   for(int idx=0; idx<out_v.size(); idx++){
-      printf("%d\n", yay[idx]);
+   {
+      bool_wrapper   mask_w      { true, true, false, true, true }; 
+      wrapper<int>   lhs_w       { 5, 5, 5, 5, 5 };
+      wrapper<int>   rhs_w       { 6, 6, 6, 6, 6 };
+      wrapper<int>   expected_w  { 5, 5, 6, 5, 5 };
+      copy_if_else_check(mask_w, lhs_w, rhs_w, expected_w); 
    }
 
-   int whee = 10;
-   whee++;
-
-   /*
-   bool whee = is_fixed_width<bool8>();
-   bool whee2 = is_fixed_width<cudf::bool8>();
-   bool whee3 = is_fixed_width<cudf::experimental::bool8>();
-   */
+   {
+      bool_wrapper   mask_w      { false, true, false, false, true };
+      wrapper<double>lhs_w       { -10.0f, -10.0, -10.0, -10.0, -10.0 };
+      wrapper<double>rhs_w       { 7.0, 7.0, 7.0, 7.0, 7.0 };
+      wrapper<double>expected_w  { 7.0, -10.0, 7.0, 7.0, -10.0 };
+      copy_if_else_check(mask_w, lhs_w, rhs_w, expected_w); 
+   }
 }
 
 
