@@ -10,6 +10,7 @@
 #include <cudf/column/column_device_view.cuh>
 #include <cudf/column/column_factories.hpp>
 #include <cudf/utilities/type_dispatcher.hpp>
+#include <cudf/copying.hpp>
 #include <cudf/replace.hpp>
 #include <utilities/cuda_utils.hpp>
 
@@ -53,6 +54,18 @@ using namespace cudf;
 using namespace std;
 using namespace rmm;
 using namespace rmm::mr;
+
+namespace {    // anonymous
+   // functor and lambdas go here
+}  // end anonymous namespace
+
+namespace cudf {
+namespace detail {
+   // detail/internal versions of exposed functions go here
+}  // namespace detail
+
+   // externally exposed functions go here
+}  // namespace cudf
 
 } 
 #endif   // skeleton for working in cudf
@@ -324,20 +337,146 @@ void ntest()
 }
 #endif   // old normalize_nans_and_zeros kernel method. never got used.
 
+//namespace db_test {
+
+using namespace cudf;
+using namespace std;
+using namespace rmm;
+using namespace rmm::mr;
+
+namespace {
+
+using namespace cudf; 
+
+/* --------------------------------------------------------------------------*/
+/**
+* @brief Functor called by the `type_dispatcher` in order to perform a copy if/else.
+*/
+/* ----------------------------------------------------------------------------*/
+struct copy_if_else_functor {   
+   template <typename T>
+   void operator()(  column_view const& boolean_mask,
+                     column_view const& lhs,
+                     column_view const& rhs,
+                     mutable_column_view& out,
+                     cudaStream_t stream)
+   {
+      auto begin  = thrust::make_zip_iterator(thrust::make_tuple( boolean_mask.begin<cudf::experimental::bool8>(),
+                                                                  lhs.begin<T>(),
+                                                                  rhs.begin<T>()));
+
+      auto end  = thrust::make_zip_iterator(thrust::make_tuple(boolean_mask.end<cudf::experimental::bool8>(),
+                                                               lhs.end<T>(),
+                                                               rhs.end<T>()));
+      
+      thrust::transform(rmm::exec_policy(stream)->on(stream),
+                     begin, end, out.begin<T>(), 
+                     [] __device__ (thrust::tuple<cudf::experimental::bool8, T, T> i) 
+                     { 
+                        return thrust::get<0>(i) ? thrust::get<1>(i) : thrust::get<2>(i);
+                     });
+   }   
+};
+
+}  // end anonymous namespace
+
+namespace cudf {
+namespace detail {
+
+unique_ptr<column> copy_if_else( column_view boolean_mask, column_view lhs, column_view rhs, 
+                                 rmm::mr::device_memory_resource *mr = rmm::mr::get_default_resource(),
+                                 cudaStream_t stream = 0)
+{
+   CUDF_EXPECTS(lhs.type() == rhs.type(), "Both columns must be of the same type");
+   CUDF_EXPECTS(boolean_mask.type() == data_type(BOOL8), "Boolean column must be of type BOOL8");
+
+   // output
+   std::unique_ptr<column> out = experimental::allocate_like(lhs, lhs.size(), experimental::mask_allocation_policy::RETAIN, mr);
+   auto mutable_view = out->mutable_view();
+
+   // invoke the actual kernel.  
+   cudf::experimental::type_dispatcher(lhs.type(), 
+                                       copy_if_else_functor{},
+                                       boolean_mask,
+                                       lhs,
+                                       rhs,
+                                       mutable_view,
+                                       stream);                                       
+
+   return out;
+}
+
+}  // namespace detail
+
+unique_ptr<column> copy_if_else( column_view const& boolean_mask, column_view const& lhs, column_view const& rhs, 
+                                 rmm::mr::device_memory_resource *mr = rmm::mr::get_default_resource())
+{
+   return detail::copy_if_else(boolean_mask, lhs, rhs, mr, 0);
+}
+
+}  // namespace cudf
+
+
+
+void copy_if_else_test()
+{
+   cudf::test::fixed_width_column_wrapper<cudf::experimental::bool8> mask_w { 
+      cudf::experimental::bool8{true}, 
+      cudf::experimental::bool8{true},
+      cudf::experimental::bool8{false},
+      cudf::experimental::bool8{true},
+      cudf::experimental::bool8{true},
+      };
+   column mask(mask_w);
+   column_view mask_v(mask);
+
+   cudf::test::fixed_width_column_wrapper<int> lhs_w{ 5, 5, 5, 5, 5 };
+   column lhs(lhs_w);
+   column_view lhs_v = lhs.view();
+
+   cudf::test::fixed_width_column_wrapper<int> rhs_w{ 6, 6, 6, 6, 6 };       
+   column rhs(rhs_w);
+   column_view rhs_v = rhs.view();
+
+   auto out = cudf::copy_if_else(mask_v, lhs_v, rhs_v);
+   column_view out_v = out->view();
+   int yay[16];
+   cudaMemcpy(yay, out_v.begin<int>(), sizeof(int) * out_v.size(), cudaMemcpyDeviceToHost);
+   for(int idx=0; idx<out_v.size(); idx++){
+      printf("%d\n", yay[idx]);
+   }
+
+   int whee = 10;
+   whee++;
+
+   /*
+   bool whee = is_fixed_width<bool8>();
+   bool whee2 = is_fixed_width<cudf::bool8>();
+   bool whee3 = is_fixed_width<cudf::experimental::bool8>();
+   */
+}
+
+
+
+
+//}  // db_test
+
 int main()
 {                
-    // init stuff
-    cuInit(0);    
-    rmmOptions_t rmm{};
-    rmm.allocation_mode = CudaDefaultAllocation;
-    rmm.initial_pool_size = 16 * 1024 * 1024;
-    rmm.enable_logging = false;
-    rmmInitialize(&rmm);      
+   // init stuff
+   cuInit(0);    
+   rmmOptions_t rmm{};
+   rmm.allocation_mode = CudaDefaultAllocation;
+   rmm.initial_pool_size = 16 * 1024 * 1024;
+   rmm.enable_logging = false;
+   rmmInitialize(&rmm);      
 
-    // there's some "do stuff the first time" issues that cause bogus timings.
-    // this function just flushes all that junk out
-    clear_baffles();    
+   // there's some "do stuff the first time" issues that cause bogus timings.
+   // this function just flushes all that junk out
+   clear_baffles();
+   
+   copy_if_else_test();    
 
     // shut stuff down
-    rmmFinalize();
+   rmmFinalize();
 }
