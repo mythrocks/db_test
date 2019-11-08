@@ -351,32 +351,31 @@ using namespace cudf;
 /* --------------------------------------------------------------------------*/
 /**
 * @brief Functor called by the `type_dispatcher` in order to perform a copy if/else
-*        with appropriate data types for lhs/rhs. 
+*        using a filter function to select from lhs/rhs columns.
 */
 /* ----------------------------------------------------------------------------*/
-struct copy_if_else_functor {   
-   template <typename T>
-   void operator()(  column_view const& boolean_mask,
+struct copy_if_else_functor {
+   template <typename T, typename Filter>
+   void operator()(  Filter filter,
                      column_view const& lhs,
                      column_view const& rhs,
                      mutable_column_view& out,
                      cudaStream_t stream)
    {
-      auto begin  = thrust::make_zip_iterator(thrust::make_tuple( boolean_mask.begin<cudf::experimental::bool8>(),
+      auto begin  = thrust::make_zip_iterator(thrust::make_tuple( thrust::make_counting_iterator(0),
                                                                   lhs.begin<T>(),
                                                                   rhs.begin<T>()));
 
-      auto end  = thrust::make_zip_iterator(thrust::make_tuple(boolean_mask.end<cudf::experimental::bool8>(),
+      auto end  = thrust::make_zip_iterator(thrust::make_tuple(thrust::make_counting_iterator(lhs.size()),
                                                                lhs.end<T>(),
                                                                rhs.end<T>()));
       
-      thrust::transform(rmm::exec_policy(stream)->on(stream),
-                     begin, end, out.begin<T>(), 
-                     [] __device__ (thrust::tuple<cudf::experimental::bool8, T, T> i) 
-                     { 
-                        return thrust::get<0>(i) ? thrust::get<1>(i) : thrust::get<2>(i);
-                     });
-   }   
+      thrust::transform(rmm::exec_policy(stream)->on(stream), begin, end, out.begin<T>(),
+                        [filter] __device__ (thrust::tuple<size_type, T, T> i)
+                        {
+                           return filter(thrust::get<0>(i)) ? thrust::get<1>(i) : thrust::get<2>(i);
+                        });
+   } 
 };
 
 }  // end anonymous namespace
@@ -384,29 +383,76 @@ struct copy_if_else_functor {
 namespace cudf {
 namespace detail {
 
-unique_ptr<column> copy_if_else( column_view boolean_mask, column_view lhs, column_view rhs, 
+/**
+ * @brief   Returns a new column, where each element is selected from either @p lhs or 
+ *          @p rhs based on the filter lambda. 
+ * 
+ * @p filter must be a functor or lambda with the following signature:
+ * __device__ bool operator()(cudf::size_type i);
+ * It should return true if element i of @p lhs should be selected, or false if element i of @p rhs should be selected. 
+ *         
+ * @throws cudf::logic_error if lhs and rhs are not of the same type
+ * @throws cudf::logic_error if lhs and rhs are not of the same length 
+ * @param[in] filter lambda. 
+ * @param[in] left-hand column_view
+ * @param[in] right-hand column_view
+ * @param[in] mr resource for allocating device memory
+ *
+ * @returns new column with the selected elements
+ */
+template<typename Filter>
+unique_ptr<column> copy_if_else( Filter filter, column_view const& lhs, column_view const& rhs,
                                  rmm::mr::device_memory_resource *mr = rmm::mr::get_default_resource(),
                                  cudaStream_t stream = 0)
+{
+   // output
+   std::unique_ptr<column> out = experimental::allocate_like(lhs, lhs.size(), experimental::mask_allocation_policy::RETAIN, mr);
+   auto mutable_view = out->mutable_view();
+   
+   cudf::experimental::type_dispatcher(lhs.type(), 
+                                       copy_if_else_functor{},
+                                       filter,
+                                       lhs,
+                                       rhs,
+                                       mutable_view,
+                                       stream);
+
+   return out;
+}
+
+}  // namespace detail
+}  // namespace cudf
+
+namespace cudf {
+namespace detail {
+
+struct pfunk {
+    column_device_view bool_mask_device;
+
+    __device__ bool operator()(int i) const
+    {
+       return bool_mask_device.element<cudf::experimental::bool8>(i);
+    }
+};
+
+unique_ptr<column> copy_if_else( column_view const& boolean_mask, column_view const& lhs, column_view const& rhs,
+                                 rmm::mr::device_memory_resource *mr,
+                                 cudaStream_t stream)
 {
    CUDF_EXPECTS(lhs.type() == rhs.type(), "Both columns must be of the same type");
    CUDF_EXPECTS(lhs.size() == rhs.size(), "Both columns must be of the size");
    CUDF_EXPECTS(boolean_mask.type() == data_type(BOOL8), "Boolean mask column must be of type BOOL8");   
    CUDF_EXPECTS(boolean_mask.size() == lhs.size(), "Boolean mask column must be the same size as lhs and rhs columns");
 
-   // output
-   std::unique_ptr<column> out = experimental::allocate_like(lhs, lhs.size(), experimental::mask_allocation_policy::RETAIN, mr);
-   auto mutable_view = out->mutable_view();
+   // filter in this case is a column made of bools
+   auto bool_mask_device_ptr = column_device_view::create(boolean_mask);   
+   column_device_view bool_mask_device = *bool_mask_device_ptr;
+   
+   // auto filter = [bool_mask_device] __device__ (cudf::size_type i) { return bool_mask_device.element<cudf::experimental::bool8>(i); };   
+   // return copy_if_else(filter, lhs, rhs, mr, stream);
 
-   // invoke the actual kernel.  
-   cudf::experimental::type_dispatcher(lhs.type(), 
-                                       copy_if_else_functor{},
-                                       boolean_mask,
-                                       lhs,
-                                       rhs,
-                                       mutable_view,
-                                       stream);                                       
-
-   return out;
+   pfunk funky{bool_mask_device};
+   return copy_if_else(funky, lhs, rhs, mr, stream);
 }
 
 }  // namespace detail
@@ -463,7 +509,7 @@ void copy_if_else_check(bool_wrapper const&  mask_w,
 
    // get the result
    auto out = cudf::copy_if_else(mask_v, lhs_v, rhs_v);
-   column_view out_v = out->view();
+   column_view out_v = out->view();   
 
    // compare
    cudf::test::expect_columns_equal(out_v, expected_v);
@@ -484,7 +530,7 @@ void copy_if_else_test()
       wrapper<double>lhs_w       { -10.0f, -10.0, -10.0, -10.0, -10.0 };
       wrapper<double>rhs_w       { 7.0, 7.0, 7.0, 7.0, 7.0 };
       wrapper<double>expected_w  { 7.0, -10.0, 7.0, 7.0, -10.0 };
-      copy_if_else_check(mask_w, lhs_w, rhs_w, expected_w); 
+      copy_if_else_check(mask_w, lhs_w, rhs_w, expected_w);
    }
 }
 
