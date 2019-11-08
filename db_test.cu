@@ -337,6 +337,7 @@ void ntest()
 }
 #endif   // old normalize_nans_and_zeros kernel method. never got used.
 
+#if 0    // copy_if_else
 //namespace db_test {
 
 using namespace cudf;
@@ -446,13 +447,10 @@ unique_ptr<column> copy_if_else( column_view const& boolean_mask, column_view co
 
    // filter in this case is a column made of bools
    auto bool_mask_device_ptr = column_device_view::create(boolean_mask);   
-   column_device_view bool_mask_device = *bool_mask_device_ptr;
-   
-   // auto filter = [bool_mask_device] __device__ (cudf::size_type i) { return bool_mask_device.element<cudf::experimental::bool8>(i); };   
-   // return copy_if_else(filter, lhs, rhs, mr, stream);
+   column_device_view bool_mask_device = *bool_mask_device_ptr;   
+   auto filter = [bool_mask_device] __device__ (cudf::size_type i) { return bool_mask_device.element<cudf::experimental::bool8>(i); }; 
 
-   pfunk funky{bool_mask_device};
-   return copy_if_else(funky, lhs, rhs, mr, stream);
+   return copy_if_else(filter, lhs, rhs, mr, stream);
 }
 
 }  // namespace detail
@@ -511,6 +509,9 @@ void copy_if_else_check(bool_wrapper const&  mask_w,
    auto out = cudf::copy_if_else(mask_v, lhs_v, rhs_v);
    column_view out_v = out->view();   
 
+   T whee[64];
+   cudaMemcpy(whee, out_v.head(), sizeof(T) * out_v.size(), cudaMemcpyDeviceToHost);
+
    // compare
    cudf::test::expect_columns_equal(out_v, expected_v);
 }
@@ -534,8 +535,7 @@ void copy_if_else_test()
    }
 }
 
-
-
+#endif   // copy if else
 
 //}  // db_test
 
@@ -551,9 +551,7 @@ int main()
 
    // there's some "do stuff the first time" issues that cause bogus timings.
    // this function just flushes all that junk out
-   clear_baffles();
-   
-   copy_if_else_test();    
+   clear_baffles();   
 
     // shut stuff down
    rmmFinalize();
