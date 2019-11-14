@@ -1,21 +1,26 @@
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
+#include <iostream>
 
 #include <cudf/cudf.h>
 #include <tests/utilities/legacy/column_wrapper.cuh>
 #include <bitmask/legacy/bit_mask.cuh>
 #include <bitmask/legacy/legacy_bitmask.hpp>
-#include <bitmask/legacy/bit_mask.cuh>
 #include <cudf/column/column_device_view.cuh>
 #include <cudf/column/column_factories.hpp>
 #include <cudf/utilities/type_dispatcher.hpp>
 #include <cudf/copying.hpp>
 #include <cudf/replace.hpp>
 #include <utilities/cuda_utils.hpp>
+// #include <cudf/detail/copy_if_else.cuh>
+#include <cudf/legacy/rolling.hpp>
 
 #include <tests/utilities/column_wrapper.hpp>
 #include <tests/utilities/column_utilities.hpp>
+
+#include <cub/cub.cuh>
+
 
 // ------------------
 //
@@ -23,9 +28,13 @@
 //
 // ------------------
 
-#define BLOCK_SIZE           (256)
-
 #define UNREFERENCED(_x)    do { (void)(_x); } while(0)
+
+using namespace cudf;
+
+// to keep names shorter
+#define wrapper cudf::test::fixed_width_column_wrapper
+using bool_wrapper = wrapper<cudf::experimental::bool8>;
 
 struct scoped_timer {
     timespec m_start;
@@ -46,6 +55,117 @@ struct scoped_timer {
         printf("%s : %.2f us\n", m_name, (float)total / (float)1000000.0f);
     }
 };
+
+template <typename cType>
+struct printy {   
+   cType *cv;
+
+   template <typename T>
+   void operator()()
+   {
+      print_column<T>();
+   }
+   
+   template <typename T, std::enable_if_t<! (std::is_floating_point<T>::value ||
+                                             std::is_integral<T>::value) >* = nullptr>
+   void print_column()
+   {
+      CUDF_FAIL("I can't print this");
+   }   
+   
+   template <typename T, std::enable_if_t<  (std::is_floating_point<T>::value ||
+                                             std::is_integral<T>::value) >* = nullptr>   
+   void print_column() const
+   {      
+      int idx;
+
+      std::cout << "-----------------------------\n";
+
+      // print values
+      T *values = (T*)alloca(sizeof(T) * cv->size());      
+      cudaMemcpy(values, cv->head(), sizeof(T) * cv->size(), cudaMemcpyDeviceToHost);      
+      for(idx=0; idx<cv->size(); idx++){
+         std::cout << values[idx];
+         if(idx < cv->size() - 1){
+            std::cout << ", ";            
+         }
+      }
+      std::cout << "\n";
+
+      // print validity mask
+      if(cv->nullable()){
+         int mask_size = ((cv->size() + 31) / 32) * sizeof(cudf::bitmask_type);
+         cudf::bitmask_type *validity = (cudf::bitmask_type*)alloca(mask_size);
+         cudaMemcpy(validity, cv->null_mask(), mask_size, cudaMemcpyDeviceToHost);      
+
+         for(idx=0; idx<cv->size(); idx++){
+            std::cout << (validity[idx / 32] & (1 << (idx % 32)) ? "1" : "0");
+            if(idx < cv->size() - 1){
+               std::cout << ", ";
+            }
+         }
+         std::cout << "\nNull count: " << cv->null_count() << "\n";
+      }
+
+      std::cout << "-----------------------------\n";
+   }
+};
+template <typename T> void print_column(T&c) { cudf::experimental::type_dispatcher(c.type(), printy<T>{&c}); }
+
+struct gdf_printy {
+   gdf_column const &c;
+
+   template <typename T>
+   void operator()()
+   {
+      print_column<T>();
+   }
+   
+   template <typename T, std::enable_if_t<! (std::is_floating_point<T>::value ||
+                                             std::is_integral<T>::value) >* = nullptr>
+   void print_column()
+   {
+      CUDF_FAIL("I can't print this");
+   }   
+   
+   template <typename T, std::enable_if_t<  (std::is_floating_point<T>::value ||
+                                             std::is_integral<T>::value) >* = nullptr>   
+   void print_column() const
+   {      
+      int idx;
+
+      std::cout << "-----------------------------\n";
+
+      // print values
+      T *values = (T*)alloca(sizeof(T) * c.size);
+      cudaMemcpy(values, c.data, sizeof(T) * c.size, cudaMemcpyDeviceToHost);      
+      for(idx=0; idx<c.size; idx++){
+         std::cout << values[idx];
+         if(idx < c.size - 1){
+            std::cout << ", ";            
+         }
+      }
+      std::cout << "\n";
+
+      // print validity mask
+      if(c.valid != nullptr){
+         int mask_size = ((c.size + 7) / 8) * sizeof(gdf_valid_type);
+         gdf_valid_type *validity = (gdf_valid_type*)alloca(mask_size);
+         cudaMemcpy(validity, c.valid, mask_size, cudaMemcpyDeviceToHost);      
+
+         for(idx=0; idx<c.size; idx++){
+            std::cout << (validity[idx / 8] & (1 << (idx % 8)) ? "1" : "0");
+            if(idx < c.size - 1){
+               std::cout << ", ";
+            }
+         }
+         std::cout << "\nNull count: " << c.null_count << "\n";
+      }
+
+      std::cout << "-----------------------------\n";
+   }
+};
+void print_gdf_column(gdf_column const& c) { cudf::experimental::type_dispatcher(cudf::data_type((cudf::type_id)c.dtype), gdf_printy{c}); }
 
 #if 0    // skeleton for working in cudf
 namespace db_test {
@@ -70,12 +190,6 @@ namespace detail {
 } 
 #endif   // skeleton for working in cudf
 
-// ------------------
-//
-// Internal functions
-//
-// ------------------
-
 // there's some "do stuff the first time" issues that cause bogus timings.
 // this function just flushes all that junk out
 static void clear_baffles()
@@ -91,251 +205,12 @@ static void clear_baffles()
     sleep(1);
 }
 
-#if 0 // sort a column using thrust::sort
-// sort a column directly using thrust::sort
-static void sort_column_basic()
-{   
-    int idx;
+// ------------------
+//
+// Work
+//
+// ------------------
 
-    // some source data.
-    int num_rows = 16;
-    float cpu_data[16] = { 5, 8, 10, 11, 2, 3, 1, 15, 12, 7, 6, 13, 9, 4, 0, 14 };
-    printf("Unsorted: ");
-    for(idx=0; idx<num_rows; idx++){        
-        printf(idx < num_rows ? "%.2f, " : "%.2f", cpu_data[idx]);
-    }    
-    printf("\n");
-
-    int data_size = num_rows * sizeof(float);  
-
-    // allocate device memory for the floats
-    float *gpu_data = nullptr;        
-    rmmError_t err = RMM_ALLOC(&gpu_data, data_size, 0);    
-
-    // copy cpu data over        
-    cudaError_t mem_err = cudaMemcpy(gpu_data, cpu_data, data_size, cudaMemcpyHostToDevice);    
-
-    // setup the column struct. validity mask is null indicating "everything is valid"
-    //gdf_column gpu_column;
-    //gdf_column_view(&gpu_column, gpu_data, nullptr, num_rows, GDF_FLOAT32);
-
-    // sort
-    thrust::device_ptr<float> dv(gpu_data);
-    thrust::sort(dv, dv + num_rows, thrust::less<float>());
-
-    // grab the data back
-    cudaMemcpy(cpu_data, gpu_data, data_size, cudaMemcpyDeviceToHost);        
-
-    printf("Sorted: ");
-    for(idx=0; idx<num_rows; idx++){        
-        printf(idx < num_rows ? "%.2f, " : "%.2f", cpu_data[idx]);
-    }    
-    printf("\n\n");
-
-    RMM_FREE(gpu_data, 0);    
-}
-#endif // sort a column using thrust::sort
-
-#if 0 // old normalize_nans_and_zeros kernel method. never got used.
-namespace db_test {
-
-using namespace cudf;
-using namespace std;
-using namespace rmm;
-using namespace rmm::mr;
-
-// old normalize_nans_and_zeros kernel method. never got used.
-namespace {  // anonymous
-
-/* --------------------------------------------------------------------------*/
-/**
- * @brief Kernel that converts inputs from `in` to `out`  using the following
- *        rule:   Convert  -NaN  -> NaN
- *                Convert  -0.0  -> 0.0
- *
- * @param[in] column_device_view representing input data
- * @param[in] mutable_column_device_view representing output data. can be
- *            the same actual underlying buffer that in points to. 
- *
- * @returns
- */
-/* ----------------------------------------------------------------------------*/
-template <typename T>
-__global__
-void normalize_nans_and_zeros(column_device_view in, 
-                              mutable_column_device_view out)
-{
-   int tid = threadIdx.x;
-   int blkid = blockIdx.x;
-   int blksz = blockDim.x;
-   int gridsz = gridDim.x;
-
-   int start = tid + blkid * blksz;
-   int step = blksz * gridsz;
-
-   // grid-stride
-   for (int i=start; i<in.size(); i+=step) {
-      if(!in.is_valid(i)){
-         continue;
-      }
-
-      T el = in.element<T>(i);
-      if(std::isnan(el)){
-         out.element<T>(i) = std::numeric_limits<T>::quiet_NaN();
-      } else if(el == (T)-0.0){
-         out.element<T>(i) = (T)0.0;
-      } else {
-         out.element<T>(i) = el;
-      }
-   }
-}                        
-
-  /* --------------------------------------------------------------------------*/
-  /**
-   * @brief Functor called by the `type_dispatcher` in order to invoke and instantiate
-   *        `normalize_nans_and_zeros` with the appropriate data types.
-   */
-  /* ----------------------------------------------------------------------------*/
-struct normalize_nans_and_zeros_kernel_forwarder {
-   // floats and doubles. what we really care about.
-   template <typename T, std::enable_if_t<std::is_floating_point<T>::value>* = nullptr>
-   void operator()(  column_device_view in,
-                     mutable_column_device_view out,
-                     cudaStream_t stream)
-   {
-      cudf::util::cuda::grid_config_1d grid{in.size(), BLOCK_SIZE};
-      normalize_nans_and_zeros<T><<<grid.num_blocks, BLOCK_SIZE, 0, stream>>>(in, out);
-   }
-
-   // if we get in here for anything but a float or double, that's a problem.
-   template <typename T, std::enable_if_t<not std::is_floating_point<T>::value>* = nullptr>
-   void operator()(  column_device_view in,
-                     mutable_column_device_view out,
-                     cudaStream_t stream)
-   {
-      CUDF_FAIL("Unexpected non floating-point type.");      
-   }   
-};
-
-} // end anonymous namespace
-
-namespace cudf {
-namespace detail {
-
-std::unique_ptr<column> normalize_nans_and_zeros( column_view input,                                                  
-                                                  cudaStream_t stream,
-                                                  rmm::mr::device_memory_resource *mr = rmm::mr::get_default_resource())
-{   
-    // to device. unique_ptr which gets automatically cleaned up when we leave
-   auto device_in = column_device_view::create(input);
-   
-   // ultimately, the output.
-   auto out = make_numeric_column(input.type(), input.size(), ALL_VALID, stream);
-   // from device. unique_ptr which gets automatically cleaned up when we leave.
-   auto device_out = mutable_column_device_view::create(*out);
-
-   // invoke the actual kernel.  
-   experimental::type_dispatcher(input.type(), 
-                                 normalize_nans_and_zeros_kernel_forwarder{},
-                                 *device_in,
-                                 *device_out,
-                                 stream);
-
-   return out;                 
-}                                                 
-
-void normalize_nans_and_zeros(mutable_column_view in_out,
-                              cudaStream_t stream)
-{  
-   // wrapping the in_out data in a column_view so we can call the same lower level code.
-   // that we use for the non in-place version.
-   column_view input = in_out;
-
-   // to device. unique_ptr which gets automatically cleaned up when we leave
-   auto device_in = column_device_view::create(input);
-
-   // from device. unique_ptr which gets automatically cleaned up when we leave.   
-   auto device_out = mutable_column_device_view::create(in_out);
-
-    // invoke the actual kernel.  
-   experimental::type_dispatcher(input.type(), 
-                                 normalize_nans_and_zeros_kernel_forwarder{},
-                                 *device_in,
-                                 *device_out,
-                                 stream);
-} 
-
-}  // namespace detail
-
-/**
- * @brief Function that converts inputs from `input` using the following rule
- *        rule:   Convert  -NaN  -> NaN
- *                Convert  -0.0  -> 0.0
- *
- * @param[in] column_device_view representing input data
- * @param[in] device_memory_resource allocator for allocating output data 
- *
- * @returns new column
- */
-std::unique_ptr<column> normalize_nans_and_zeros( column_view input,                                                                                                    
-                                                  rmm::mr::device_memory_resource *mr = rmm::mr::get_default_resource())
-{
-   return detail::normalize_nans_and_zeros(input, 0, mr);;
-}
-
-/**
- * @brief Function that processes values in-place from `in_out` using the following rule
- *        rule:   Convert  -NaN  -> NaN
- *                Convert  -0.0  -> 0.0
- *
- * @param[in, out] mutable_column_view representing input data. data is processed in-place
- *
- * @returns new column
- */
-void normalize_nans_and_zeros(mutable_column_view in_out)
-{
-   return detail::normalize_nans_and_zeros(in_out, 0);
-}
-
-} // namespace cudf
-
-} // anonymous namespace
-
-void ntest()
-{
-   float whee[10] = { 32.5f, -0.0f, 111.0f, -NAN, NAN, 1.0f, 0.0f, 54.3f };   
-   int num_els = 8;
-
-   uint32_t nan = *((uint32_t*)(&whee[1]));   
-
-   printf("Before: ");
-   for(int idx=0; idx<num_els; idx++){
-      printf(idx < num_els ? "%.2f, " : "%.2f", whee[idx]);
-   }
-   printf("\n");
-
-   // copy the data to a column (which is always on the device)
-   auto test_data = cudf::make_numeric_column(cudf::data_type(cudf::FLOAT32), num_els, cudf::ALL_VALID, 0);      
-   // there's an overloaded operator for this but I like to see what's
-   // actually going on.
-   auto view = test_data->mutable_view();
-   cudaMemcpy(view.head(), whee, sizeof(float) * num_els, cudaMemcpyHostToDevice);
-
-   // do it
-   db_test::cudf::normalize_nans_and_zeros(view);
-
-   // get the data back
-   cudaMemcpy(whee, view.head(), sizeof(float) * num_els, cudaMemcpyDeviceToHost);
-   
-   uint32_t nan2 = *((uint32_t*)(&whee[1]));
-
-   printf("After: ");
-   for(int idx=0; idx<num_els; idx++){
-      printf(idx < num_els ? "%.2f, " : "%.2f", whee[idx]);
-   }
-   printf("\n\n");
-}
-#endif   // old normalize_nans_and_zeros kernel method. never got used.
 
 #if 0    // copy_if_else
 //namespace db_test {
@@ -482,10 +357,6 @@ unique_ptr<column> copy_if_else( column_view const& boolean_mask, column_view co
 }  // namespace cudf
 
 
-// to keep names shorter
-#define wrapper cudf::test::fixed_width_column_wrapper
-using bool_wrapper = wrapper<cudf::experimental::bool8>;
-
 template<typename T>
 void copy_if_else_check(bool_wrapper const&  mask_w,
                         wrapper<T> const&    lhs_w,
@@ -535,7 +406,214 @@ void copy_if_else_test()
    }
 }
 
+/*
+
+template <typename T, typename Filter, bool has_validity>
+__global__
+void copy_if_else_kernel(  column_device_view const lhs,
+                           column_device_view const rhs,
+                           SelectIter s_iter,
+                           mutable_column_device_view out,
+                           cudf::size_type * __restrict__ const null_count)
+{   
+   const cudf::size_type tid = threadIdx.x + blockIdx.x * blockDim.x;   
+   const int w_id = tid / warp_size;
+   // begin/end indices for the column data
+   cudf::size_type begin = 0;
+   cudf::size_type end = lhs.size();   
+   // warp indices.  since 1 warp == 32 threads == sizeof(bit_mask_t) * 8,
+   // each warp will process one (32 bit) of the validity mask via 
+   // __ballot_sync()
+   cudf::size_type w_begin = cudf::util::detail::bit_container_index<bit_mask::bit_mask_t>(begin);
+   cudf::size_type w_end = cudf::util::detail::bit_container_index<bit_mask::bit_mask_t>(end);
+
+   // lane id within the current warp
+   const int w_lane_id = threadIdx.x % warp_size;
+
+   // store a null count for each warp in the block
+   constexpr cudf::size_type b_max_warps = 32;
+   __shared__ uint32_t b_warp_null_count[b_max_warps];
+   // initialize count to 0. we have to do this because the WarpReduce
+   // at the end will end up summing all values, even ones which we never 
+   // visit.
+   if(has_validity){   
+      if(threadIdx.x < b_max_warps){
+         b_warp_null_count[threadIdx.x] = 0;
+      }   
+      __syncthreads();   
+   }   
+
+   // current warp.
+   cudf::size_type w_cur = w_begin + w_id;         
+   // process each grid
+   while(w_cur <= w_end){
+      // absolute element index
+      cudf::size_type index = (w_cur * warp_size) + w_lane_id;
+      bool in_range = (index >= begin && index < end);
+
+      bool valid = true;
+      if(has_validity){
+         valid = in_range && filter(index) ? lhs.is_valid(index) : rhs.is_valid(index);
+      }
+
+      // do the copy if-else, but only if this element is valid in the column to be copied 
+      if(in_range && valid){ 
+         out.element<T>(index) = filter(index) ? lhs.element<T>(index) : rhs.element<T>(index);
+      }
+      
+      // update validity
+      if(has_validity){
+         // get mask indicating which threads in the warp are actually in range
+         int w_active_mask = __ballot_sync(0xFFFFFFFF, in_range);      
+         // the final validity mask for this warp
+         int w_mask = __ballot_sync(w_active_mask, valid);
+         // only one guy in the warp needs to update the mask and count
+         if(w_lane_id == 0){
+            out.set_mask_word(w_cur, w_mask);
+            cudf::size_type b_warp_cur = threadIdx.x / warp_size;
+            b_warp_null_count[b_warp_cur] = __popc(~(w_mask | ~w_active_mask));
+         }
+      }      
+
+      // next grid
+      w_cur += blockDim.x * gridDim.x;
+   }
+
+   if(has_validity){
+      __syncthreads();
+      // first warp uses a WarpReduce to sum the null counts from all warps
+      // within the block
+      if(threadIdx.x < b_max_warps){
+         // every thread collectively sums all the null counts using a WarpReduce      
+         uint32_t w_null_count = b_warp_null_count[threadIdx.x];
+         __shared__ typename cub::WarpReduce<uint32_t>::TempStorage temp_storage;
+         uint32_t b_null_count = cub::WarpReduce<uint32_t>(temp_storage).Sum(w_null_count);
+
+         // only one thread in the warp needs to do the actual store
+         if(w_lane_id == 0){
+            // using an atomic here because there are multiple blocks doing this work
+            atomicAdd(null_count, b_null_count);
+         }
+      }
+   }
+}
+*/
+template<typename T>
+void copy_if_else_check(bool_wrapper const&  mask_w,
+                        wrapper<T> const&    lhs_w,
+                        wrapper<T> const&    rhs_w,
+                        wrapper<T> const&    expected_w)
+{   
+   // construct input views
+   column mask(mask_w);
+   column_view mask_v(mask);   
+   //
+   column lhs(lhs_w);
+   column_view lhs_v = lhs.view();
+   //auto lhs_dv = column_device_view::create(lhs_v);   
+   //
+   column rhs(rhs_w);
+   column_view rhs_v = rhs.view();
+   //auto rhs_dv = column_device_view::create(rhs_v);
+   //
+   column expected(expected_w);
+   column_view expected_v = expected.view();
+    
+   /*
+   std::unique_ptr<column> out = experimental::allocate_like(rhs, rhs.size(), experimental::mask_allocation_policy::RETAIN);
+   column_view out_v(out->view());
+   auto out_dv = mutable_column_device_view::create(out->mutable_view());      
+   cudf::util::cuda::grid_config_1d grid{lhs.size(), 256};
+   cudf::size_type *null_count = nullptr;
+   RMM_ALLOC(&null_count, sizeof(cudf::size_type), 0);
+   cudf::size_type null_count_out = 0;
+   cudaMemcpy(null_count, &null_count_out, sizeof(cudf::size_type), cudaMemcpyHostToDevice);   
+   copy_if_else_kernel<T, cudf::experimental::bool8 const*, true><<<1, 256, 0, 0>>>(
+      *lhs_dv,
+      *rhs_dv,
+      mask_v.begin<cudf::experimental::bool8>(),
+      *out_dv,
+      null_count); 
+   cudaMemcpy(&null_count_out, null_count, sizeof(cudf::size_type), cudaMemcpyDeviceToHost);
+   */
+   auto out = cudf::experimental::copy_if_else(lhs_v, rhs_v, mask_v);
+   column_view out_v(*out);
+
+   cudf::test::expect_columns_equal(out_v, expected_v);
+
+   print_column(out_v);
+   print_column(expected_v);   
+}
+
+void copy_if_else_test()
+{      
+   using T = int;
+
+   // short one. < 1 warp/bitmask length   
+      int num_els = 4;
+
+      bool mask[]    = { 1, 0, 0, 0 };
+      bool_wrapper mask_w(mask, mask + num_els);
+
+      T lhs[]        = { 5, 5, 5, 5 }; 
+      bool lhs_v[]   = { 1, 1, 1, 1 };
+      wrapper<T> lhs_w(lhs, lhs + num_els, lhs_v);
+
+      T rhs[]        = { 6, 6, 6, 6 };
+      bool rhs_v[]   = { 1, 0, 0, 0 };
+      wrapper<T> rhs_w(rhs, rhs + num_els, rhs_v);
+      
+      T expected[]   = { 5, 6, 6, 6 };
+      bool exp_v[]   = { 1, 0, 0, 0 };
+      wrapper<T> expected_w(expected, expected + num_els, exp_v);
+
+      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);      
+      cudf::test::expect_columns_equal(out->view(), expected_w);   
+
+   column_view out_v(*out);
+   print_column(out_v);
+   column expected_c(expected_w);
+   column_view expected_v = expected_c.view();
+   print_column(expected_v);
+}
+
 #endif   // copy if else
+
+#if 0
+void rolling_window_test()
+{   
+   gdf_col_pointer col = create_gdf_column<int>(std::vector<int>{5, 0, 7, 0, 8},
+                                                std::vector<cudf::valid_type>{ 1<<0 | 1<<2 | 1<<4 });
+
+   gdf_col_pointer expected = create_gdf_column<int>(std::vector<int>{0, 12, 0, 15, 0},
+                                                std::vector<cudf::valid_type>{ 1<<1 | 1<<3 });
+
+   print_gdf_column(*col);   
+   
+   gdf_column *out = cudf::rolling_window(*col, 2, 2, 1, GDF_SUM, nullptr, nullptr, nullptr);   
+
+   print_gdf_column(*expected);
+   print_gdf_column(*out);   
+
+   //expect_columns_are_equal(col, expected, 
+
+   /*
+template <typename ColumnType>
+gdf_col_pointer create_gdf_column(std::vector<ColumnType> const & host_vector,
+                                  std::vector<cudf::valid_type> const & valid_vector = std::vector<cudf::valid_type>())
+
+   
+     void testWindowStaticWithNulls() {
+    WindowOptions v0 = WindowOptions.builder().windowSize(2).minPeriods(2).forwardWindow(0).
+        aggType(AggregateOp.SUM).build();
+    try (ColumnVector v1 = ColumnVector.fromBoxedInts(0, 1, 2, null, 4);
+        ColumnVector expected = ColumnVector.fromBoxedInts(null, 1, 3, null, null);
+        ColumnVector result = v1.rollingWindow(v0)) {        
+        assertColumnsAreEqual(expected, result);
+    }
+    */
+}
+#endif
 
 //}  // db_test
 
@@ -546,12 +624,15 @@ int main()
    rmmOptions_t rmm{};
    rmm.allocation_mode = CudaDefaultAllocation;
    rmm.initial_pool_size = 16 * 1024 * 1024;
-   rmm.enable_logging = false;
-   rmmInitialize(&rmm);      
+   rmm.enable_logging = false;   
+   rmmInitialize(&rmm);         
 
    // there's some "do stuff the first time" issues that cause bogus timings.
    // this function just flushes all that junk out
-   clear_baffles();   
+   clear_baffles();      
+
+   // copy_if_else_test();
+   // rolling_window_test();
 
     // shut stuff down
    rmmFinalize();
