@@ -121,7 +121,8 @@
          "*.tcc": "cpp",
          "cuchar": "cpp",
          "filesystem": "cpp",
-         "memory_resource": "cpp"
+         "memory_resource": "cpp",
+         "simd": "cpp"
       }
    }
 }
