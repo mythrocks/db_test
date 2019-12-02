@@ -122,7 +122,8 @@
          "cuchar": "cpp",
          "filesystem": "cpp",
          "memory_resource": "cpp",
-         "simd": "cpp"
+         "simd": "cpp",
+         "__functional_base_03": "cpp"
       }
    }
 }

@@ -12,7 +12,7 @@
 #include <cudf/utilities/type_dispatcher.hpp>
 #include <cudf/copying.hpp>
 #include <cudf/replace.hpp>
-#include <utilities/cuda_utils.hpp>
+// #include <utilities/cuda_utils.hpp>
 // #include <cudf/detail/copy_if_else.cuh>
 #include <cudf/legacy/rolling.hpp>
 
@@ -24,6 +24,10 @@
 #include <rmm/device_scalar.hpp>
 
 #include "nvstrings/NVStrings.h"
+
+#include <cudf/scalar/scalar.hpp>
+
+#include <cudf/detail/copy_if_else.cuh>
 
 
 // ------------------
@@ -324,6 +328,7 @@ void copy_if_else_test()
 #endif   // copy if else
 
 
+#if 0    // timestamp_parse_test
 void timestamp_parse_test()
 {
    std::vector<const char*> hstrs{"1776"};
@@ -342,24 +347,186 @@ void timestamp_parse_test()
    whee++;
 }
 
+#endif   // timestamp_parse_test
+
+/*
+std::unique_ptr<column> _copy_if_else( cudf::scalar const& lhs, column_view const& rhs, column_view const& boolean_mask,
+                                      rmm::mr::device_memory_resource *mr = rmm::mr::get_default_resource(),
+                                      cudaStream_t stream = 0)
+{
+   CUDF_EXPECTS(lhs.type() == rhs.type(), "Both columns must be of the same type");   
+   CUDF_EXPECTS(not boolean_mask.has_nulls(), "Boolean mask must not contain null values.");
+   CUDF_EXPECTS(boolean_mask.type() == data_type(BOOL8), "Boolean mask column must be of type BOOL8");   
+   CUDF_EXPECTS(boolean_mask.size() == rhs.size(), "Boolean mask column must be the same size as lhs and rhs columns");   
+
+   auto bool_mask_device_p = column_device_view::create(boolean_mask);
+   column_device_view bool_mask_device = *bool_mask_device_p;
+   auto filter = [bool_mask_device] __device__ (cudf::size_type i) { return bool_mask_device.element<cudf::experimental::bool8>(i); };
+
+   return cudf::experimental::detail::copy_if_else(lhs, rhs, filter, mr, stream);
+}
+*/
+
+void copy_if_else_scalar_test()
+{   
+   using T = int;
+
+   /*
+   // short one. < 1 warp/bitmask length   
+   int num_els = 5;
+
+   bool mask[]    = { 1, 0, 0, 1, 0 };
+   bool_wrapper mask_w(mask, mask + num_els);
+
+   T lhs[]        = { 99, 5, 5, 99, 5 };
+   bool lhs_v[]   = { 1, 1, 1, 1, 1 };  
+   // wrapper<T> lhs_w(lhs, lhs + num_els, lhs_v);   
+   cudf::numeric_scalar<T> lhs_w(88);   
+
+   T rhs[]        = { 6, 6, 6, 6, 6 };  
+   bool rhs_v[]   = { 1, 1, 1, 1, 0 };  
+   // wrapper<T> rhs_w(rhs, rhs + num_els, rhs_v);
+   // column_view rhs_c(rhs_w);
+   cudf::numeric_scalar<T> rhs_w(77);   
+      
+   T expected[]        = { 99, 6, 6, 99, 6 };  
+   bool expected_v[]   = { 1, 1, 1, 1, 0 };
+   wrapper<T> expected_w(expected, expected + num_els, expected_v);   
+      
+   auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);
+   column_view out_v = out->view();
+   print_column(out_v);
+   cudf::test::expect_columns_equal(out->view(), expected_w);
+   */
+  /*
+   int num_els = 4;
+
+   bool mask[]    = { 1, 0, 0, 1 };
+   bool_wrapper mask_w(mask, mask + num_els);
+
+   cudf::numeric_scalar<T> lhs_w(5);
+
+   cudf::numeric_scalar<T> rhs_w(6);
+   
+   T expected[]   = { 5, 6, 6, 5 };   
+   wrapper<T> expected_w(expected, expected + num_els);
+
+   auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);
+   column_view out_v = out->view();
+   print_column(out_v);
+   cudf::test::expect_columns_equal(out_v, expected_w);   
+   */
+
+   {
+      int num_els = 4;
+
+      bool mask[]    = { 1, 0, 1, 1 };
+      bool_wrapper mask_w(mask, mask + num_els);
+
+      T lhs[]        = { 5, 5, 5, 5 }; 
+      bool lhs_m[]   = { 1, 1, 1, 0 };
+      wrapper<T> lhs_w(lhs, lhs + num_els, lhs_m);
+
+      T rhs[]        = { 6, 6, 6, 6 };
+      bool rhs_m[]   = { 1, 0, 1, 1 };
+      wrapper<T> rhs_w(rhs, rhs + num_els, rhs_m);      
+
+      T expected[]   = { 5, 6, 5, 5 };
+      bool exp_m[]   = { 1, 0, 1, 0 };
+      wrapper<T> expected_w(expected, expected + num_els, exp_m);
+
+      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);     
+      column_view out_v = out->view();
+      print_column(out_v);
+      cudf::test::expect_columns_equal(out->view(), expected_w);  
+   }
+   
+   {
+      int num_els = 4;
+
+      bool mask[]    = { 1, 0, 1, 1 };
+      bool_wrapper mask_w(mask, mask + num_els);
+
+      T lhs[]        = { 5, 5, 5, 5 }; 
+      bool lhs_m[]   = { 1, 1, 1, 0 };
+      wrapper<T> lhs_w(lhs, lhs + num_els, lhs_m);
+
+      T rhs[]        = { 6, 6, 6, 6 };
+      wrapper<T> rhs_w(rhs, rhs + num_els);      
+
+      T expected[]   = { 5, 6, 5, 5 };
+      bool exp_m[]   = { 1, 1, 1, 0 };
+      wrapper<T> expected_w(expected, expected + num_els, exp_m);
+
+      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);     
+      column_view out_v = out->view();
+      print_column(out_v);
+      cudf::test::expect_columns_equal(out->view(), expected_w);  
+   }
+   {
+      int num_els = 4;
+
+      bool mask[]    = { 1, 0, 1, 1 };
+      bool_wrapper mask_w(mask, mask + num_els);
+
+      T lhs[]        = { 5, 5, 5, 5 };       
+      wrapper<T> lhs_w(lhs, lhs + num_els);
+
+      T rhs[]        = { 6, 6, 6, 6 };
+      bool rhs_m[]   = { 1, 0, 1, 1 };
+      wrapper<T> rhs_w(rhs, rhs + num_els, rhs_m);      
+
+      T expected[]   = { 5, 6, 5, 5 };
+      bool exp_m[]   = { 1, 0, 1, 1 };
+      wrapper<T> expected_w(expected, expected + num_els, exp_m);
+
+      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);     
+      column_view out_v = out->view();
+      print_column(out_v);
+      cudf::test::expect_columns_equal(out->view(), expected_w);  
+   }
+   
+   {
+      int num_els = 4;
+
+      bool mask[]    = { 1, 0, 1, 1 };
+      bool_wrapper mask_w(mask, mask + num_els);
+
+      T lhs[]        = { 5, 5, 5, 5 };       
+      wrapper<T> lhs_w(lhs, lhs + num_els);
+
+      T rhs[]        = { 6, 6, 6, 6 };
+      wrapper<T> rhs_w(rhs, rhs + num_els);      
+
+      T expected[]   = { 5, 6, 5, 5 };      
+      wrapper<T> expected_w(expected, expected + num_els);
+
+      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);     
+      column_view out_v = out->view();
+      print_column(out_v);
+      cudf::test::expect_columns_equal(out->view(), expected_w);  
+   }
+}
+
 int main()
-{                
+{
    // init stuff
-   cuInit(0);    
+   cuInit(0);
    rmmOptions_t rmm{};
    rmm.allocation_mode = CudaDefaultAllocation;
    rmm.initial_pool_size = 16 * 1024 * 1024;
-   rmm.enable_logging = false;   
-   rmmInitialize(&rmm);         
+   rmm.enable_logging = false;
+   rmmInitialize(&rmm);
 
    // there's some "do stuff the first time" issues that cause bogus timings.
    // this function just flushes all that junk out
-   clear_baffles();      
+   clear_baffles();
 
    // copy_if_else_test();
    // rolling_window_test();
-   timestamp_parse_test();
-   // copy_if_else_test();
+   // timestamp_parse_test();
+   // column_equal_test();
+   copy_if_else_scalar_test();
 
     // shut stuff down
    rmmFinalize();
