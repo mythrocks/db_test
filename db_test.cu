@@ -12,6 +12,8 @@
 #include <cudf/utilities/type_dispatcher.hpp>
 #include <cudf/copying.hpp>
 #include <cudf/replace.hpp>
+#include <cudf/table/table.hpp>
+#include <cudf/table/table_view.hpp>
 // #include <utilities/cuda_utils.hpp>
 // #include <cudf/detail/copy_if_else.cuh>
 #include <cudf/legacy/rolling.hpp>
@@ -28,6 +30,7 @@
 #include <cudf/scalar/scalar.hpp>
 
 #include <cudf/detail/copy_if_else.cuh>
+#include <cudf/detail/utilities/integer_utils.hpp>
 
 
 // ------------------
@@ -64,67 +67,140 @@ struct scoped_timer {
     }
 };
 
-template <typename cType>
-struct printy {   
-   cType *cv;
+void print_nullmask(column_view const& cv, bool draw_separators)
+{
+   int mask_size = ((cv.size() + 31) / 32) * sizeof(cudf::bitmask_type);
+   cudf::bitmask_type *validity = (cudf::bitmask_type*)alloca(mask_size);
+   cudaMemcpy(validity, cv.null_mask(), mask_size, cudaMemcpyDeviceToHost);
 
-   template <typename T>
-   void operator()()
-   {
-      print_column<T>();
+   std::cout << "V: ";
+
+   int actual_null_count = 0;
+   for(int idx=0; idx<cv.size(); idx++){
+      // the validity mask doesn't have offset baked into it so we have to shift it
+      // ourselves
+      int v_index = idx + cv.offset();      
+
+      bool is_null = !(validity[v_index / 32] & (1 << (v_index % 32)));
+      if(is_null){
+         actual_null_count++;
+      }
+      std::cout << (is_null ? "0" : "1");
+      if(idx < cv.size() - 1){
+         std::cout << ", ";
+      }
    }
-   
-   template <typename T, std::enable_if_t<! (std::is_floating_point<T>::value ||
-                                             std::is_integral<T>::value) >* = nullptr>
-   void print_column()
-   {
-      CUDF_FAIL("I can't print this");
-   }   
-   
-   template <typename T, std::enable_if_t<  (std::is_floating_point<T>::value ||
-                                             std::is_integral<T>::value) >* = nullptr>   
-   void print_column() const
-   {      
+   if(draw_separators){
+      std::cout << "\nReported null count: " << cv.null_count();
+      std::cout << "\nActual null count: " << actual_null_count << "\n";
+   } else {
+      std::cout << "\n";
+   }
+}
+
+template<typename T>
+struct printy_impl {
+   static void print_column(column_view const& cv, bool draw_separators)
+   {            
       int idx;
 
-      std::cout << "-----------------------------\n";
+      if(draw_separators){
+         std::cout << "-----------------------------\n";
+      }
+
+      std::cout << "D: ";
 
       // print values
-      T *values = (T*)alloca(sizeof(T) * cv->size());      
-      cudaMemcpy(values, cv->head(), sizeof(T) * cv->size(), cudaMemcpyDeviceToHost);      
-      for(idx=0; idx<cv->size(); idx++){
+      T *values = (T*)alloca(sizeof(T) * cv.size());            
+      cudaMemcpy(values, cv.begin<T>(), sizeof(T) * cv.size(), cudaMemcpyDeviceToHost);      
+      for(idx=0; idx<cv.size(); idx++){
          std::cout << values[idx];
-         if(idx < cv->size() - 1){
+         if(idx < cv.size() - 1){
             std::cout << ", ";            
          }
       }
       std::cout << "\n";
 
       // print validity mask
-      if(cv->nullable()){
-         int mask_size = ((cv->size() + 31) / 32) * sizeof(cudf::bitmask_type);
-         cudf::bitmask_type *validity = (cudf::bitmask_type*)alloca(mask_size);
-         cudaMemcpy(validity, cv->null_mask(), mask_size, cudaMemcpyDeviceToHost);      
-
-         int actual_null_count = 0;
-         for(idx=0; idx<cv->size(); idx++){
-            bool is_null = !(validity[idx / 32] & (1 << (idx % 32)));
-            if(is_null){
-               actual_null_count++;
-            }
-            std::cout << (is_null ? "0" : "1");
-            if(idx < cv->size() - 1){
-               std::cout << ", ";
-            }
-         }
-         std::cout << "\nReported null count: " << cv->null_count();
-         std::cout << "\nActual null count: " << actual_null_count << "\n";
+      if(cv.nullable()){         
+         print_nullmask(cv, draw_separators);
       }
 
-      std::cout << "-----------------------------\n";
+      if(draw_separators){
+         std::cout << "-----------------------------\n";
+      }
    }
 };
-template <typename T> void print_column(T&c) { cudf::experimental::type_dispatcher(c.type(), printy<T>{&c}); }
+
+template<>
+struct printy_impl<string_view> {
+   static void print_column(column_view const& _cv, bool draw_separators)
+   {    
+      strings_column_view cv(_cv);      
+
+      if(draw_separators){
+         std::cout << "-----------------------------\n";
+      }
+
+      cudf::strings::print(cv, 0, -1, -1, ",");
+      std::cout << "\n";
+
+      // print validity mask
+      if(_cv.nullable()){
+         print_nullmask(_cv, draw_separators);
+      }
+
+      if(draw_separators){
+         std::cout << "-----------------------------\n";
+      }
+   }
+};
+
+template<>
+struct printy_impl<timestamp_D> {
+   static void print_column(column_view const& cv, bool draw_separators){}
+};
+template<>
+struct printy_impl<timestamp_s> {
+   static void print_column(column_view const& cv, bool draw_separators){}
+};
+template<>
+struct printy_impl<timestamp_ms> {
+   static void print_column(column_view const& cv, bool draw_separators){}
+};
+template<>
+struct printy_impl<timestamp_us> {
+   static void print_column(column_view const& cv, bool draw_separators){}
+};
+template<>
+struct printy_impl<timestamp_ns> {
+   static void print_column(column_view const& cv, bool draw_separators){}
+};
+struct printy {
+   template<typename T>
+   void operator()(column_view const& c, bool draw_separators)
+   {      
+      printy_impl<T>::print_column(c, draw_separators);
+   }
+};
+
+void print_column(column_view const& c, bool draw_separators = true) 
+{ 
+   cudf::experimental::type_dispatcher(c.type(), printy{}, c, draw_separators); 
+}
+// template <typename cT> void print_column(cT&c, bool draw_seperators = true) { cudf::experimental::type_dispatcher(c.type(), printy<cT>{&c}, draw_seperators); }
+void print_table(table_view const &tv)
+{ 
+   std::cout << "-----------------------------\n";
+   int idx;
+   for(idx=0; idx<tv.num_columns(); idx++){
+      print_column(tv.column(idx), false);
+      if(idx < tv.num_columns() - 1){
+         std::cout << "-\n";
+      }
+   }
+   std::cout << "-----------------------------\n";
+}
 
 struct gdf_printy {
    gdf_column const &c;
@@ -349,6 +425,7 @@ void timestamp_parse_test()
 
 #endif   // timestamp_parse_test
 
+#if 0 // copy_if_else
 /*
 std::unique_ptr<column> _copy_if_else( cudf::scalar const& lhs, column_view const& rhs, column_view const& boolean_mask,
                                       rmm::mr::device_memory_resource *mr = rmm::mr::get_default_resource(),
@@ -508,6 +585,345 @@ void copy_if_else_scalar_test()
    }
 }
 
+#endif // copy_if_else
+
+/*
+__global__
+void split_kernel(table_device_view const input, mutable_column_device_view &out)
+{
+   size_type row = blockIdx.x * blockDim.x + threadIdx.x;
+   size_type column = blockIdx.y * blockDim.y + threadIdx.y;
+
+   size_type stride_x = blockDim.x * gridDim.x;
+   size_type stride_y = blockDim.y * gridDim.y;
+}
+*/
+
+/*
+class split_result
+
+void table_split_test()
+{    
+   int num_els = 4;
+
+   short c0[]        = { 3, 3, 3, 3 };       
+   wrapper<int> c0_w(c0, c0 + num_els);
+
+   float c1[]        = { 4, 4, 4, 4 };
+   wrapper<float> c1_w(c1, c1 + num_els);
+   
+   std::vector<std::unique_ptr<cudf::column>> cols;
+   cols.push_back(c0_w.release());
+   cols.push_back(c1_w.release());
+   cudf::experimental::table t{std::move(cols)};
+   print_table(t);
+
+   int whee = 10;
+   whee++;
+}
+*/
+
+/*
+struct serialized_subtable_blob {  
+   // CPU address. managed entirely by this class.
+   // offsets for subcolumns. probably some packed format like:  
+   // (uint) num_columns      
+   // (for each column)
+   //    (uint) absolute column offset
+   //    (uint) absolute column validity mask offset
+   void *get_header();
+   size_t get_header_size();
+
+   // GPU address. points into "all_data"
+   void *get_ptr();
+   size_t get_size();      
+};
+struct serialized_subtables {
+   std::vector<serialized_subtable_blob>     subtables;
+   std::unique_ptr<rmm::device_buffer>       all_data;  
+};
+
+// serialize all subtables (sender)
+serialized_subtables serialize_subtables(cudf::experimental::table_view const& input, std::vector<size_type> const& splits);
+
+// deserialize a single subtable (receiver)
+table deserialize_subtable(void *header, void *data);
+
+// example sender
+void sender(table_view &input, std::vector<size_type> const& splits)
+{
+   // make subtables
+   serialized_subtables out = memory_aligned_split(input, splits);
+
+   // send to remote machines.  
+   for(int idx=0; idx<out.subtables.size(); idx++){
+      serialized_subtable_blob &sub = out.subtables[idx];
+      sendify(sub.get_header(), sub.get_header_size(), sub.get_ptr(), sub.get_size());
+   }  
+}
+
+// example receiver
+// since this memory is completely gamed, you will be responsible for calling table::release() on
+// anything that comes out of here. 
+table receiver(void *header, size_t header_size, void *data, size_t data_size)
+{
+   // don't really need header_size and data_size here since the header should have everything it needs.
+   return deserialize_subtable(header, data);
+}
+*/
+
+
+
+std::unique_ptr<column> make_strings(std::vector<const char*> _strings)
+{   
+   cudf::test::strings_column_wrapper strings( _strings.begin(), _strings.end(),
+        thrust::make_transform_iterator( _strings.begin(), [] (auto str) { return str!=nullptr; }));
+      
+   return strings.release();
+}
+
+struct contiguous_split_result {
+   cudf::table_view                    table;
+   std::unique_ptr<rmm::device_buffer> all_data;
+};
+
+template<typename T>
+struct size_functor_impl {
+   void operator()(size_type *tp)
+   {
+      *tp = sizeof(T);
+   }
+};
+
+template<>
+struct size_functor_impl<string_view> {
+   void operator()(size_type *tp){};
+};
+
+struct size_functor {
+   template<typename T>
+   void operator()(size_type *tp)
+   {
+      size_functor_impl<T> sizer{};
+      sizer(tp);
+   }
+};
+
+typedef std::vector<cudf::column_view> subcolumns;
+static constexpr int split_align = 8;
+
+std::vector<std::unique_ptr<rmm::device_buffer>> build_output_buffers_reference( std::vector<subcolumns> const& split_table, 
+                                                                                 size_type *type_sizes,
+                                                                                 rmm::mr::device_memory_resource* mr,
+                                                                                 cudaStream_t stream)
+{ 
+   size_t num_out_tables = split_table[0].size();
+   std::vector<std::unique_ptr<rmm::device_buffer>> result;
+
+   // output packing for a given table will be:
+   // (C0)(V0)(C1)(V1)
+   // where Cx = column x and Vx = validity mask x
+   // padding to split_align boundaries between each buffer
+   for(size_t t_idx=0; t_idx<num_out_tables; t_idx++){  
+      size_t subtable_size = 0;
+
+      for(size_t c_idx=0; c_idx<split_table.size(); c_idx++){         
+         column_view const& subcol = split_table[c_idx][t_idx];
+         
+         // special case for strings. we'll handle this eventually
+         if(subcol.type().id() == cudf::STRING){
+            continue;
+         }
+         size_t data_size = cudf::util::div_rounding_up_safe(subcol.size() * type_sizes[subcol.type().id()], split_align) * split_align;
+         subtable_size += data_size;
+         if(subcol.nullable()){
+            size_t valid_size = cudf::bitmask_allocation_size_bytes(subcol.size(), split_align);
+            subtable_size += valid_size;
+         }
+      }
+
+      // allocate
+      result.push_back(std::make_unique<rmm::device_buffer>(rmm::device_buffer{subtable_size, stream, mr}));
+   }
+   
+   return result;
+}
+
+std::vector<contiguous_split_result> perform_split_reference(  std::vector<subcolumns> const& split_table,
+                                                               size_type *type_sizes,
+                                                               std::vector<std::unique_ptr<rmm::device_buffer>>& output_buffers)
+{    
+   size_t num_out_tables = split_table[0].size();
+   std::vector<contiguous_split_result> result;
+
+   // output packing for a given table will be:
+   // (C0)(V0)(C1)(V1)
+   // where Cx = column x and Vx = validity mask x
+   // padding to split_align boundaries between each buffer
+   for(size_t t_idx=0; t_idx<num_out_tables; t_idx++){
+      // destination column_views and backing data
+      std::vector<column_view> dst_cols;
+      char *dst = static_cast<char*>(output_buffers[t_idx]->data());      
+            
+      for(size_t c_idx=0; c_idx<split_table.size(); c_idx++){         
+         column_view const& subcol = split_table[c_idx][t_idx];
+         
+         // special case for strings. we'll handle this eventually
+         if(subcol.type().id() == cudf::STRING){
+            continue;
+         }                  
+
+         // data size         
+         size_t data_size = cudf::util::div_rounding_up_safe(subcol.size() * type_sizes[subcol.type().id()], split_align) * split_align;
+
+         // see if we've got validity
+         bitmask_type *dst_validity = nullptr;
+         size_t validity_size = 0;
+         if(subcol.nullable()){
+            dst_validity = reinterpret_cast<bitmask_type*>(dst + data_size);
+            validity_size = cudf::bitmask_allocation_size_bytes(subcol.size(), split_align);
+         }         
+         
+         // copy the data
+         mutable_column_view new_col{subcol.type(), subcol.size(), dst, dst_validity};
+         cudf::experimental::copy_range(subcol, new_col, 0, subcol.size(), 0);         
+
+         // push the final column_view to the output
+         dst_cols.push_back(new_col);         
+
+         // increment dst buffers
+         dst += (data_size + validity_size);                 
+      }
+
+      // construct the final table view
+      result.push_back(contiguous_split_result{table_view{dst_cols}, std::move(output_buffers[t_idx])});
+   }
+      
+   return result;
+}
+
+// do it all the simple way on the 
+// void split_reference(cudf::experimental::table_view const& input, std::vector<size_type> const& splits)
+std::vector<contiguous_split_result> contiguous_split_reference(  cudf::table_view const& input,
+                                                                  std::vector<size_type> const& splits,
+                                                                  rmm::mr::device_memory_resource* mr = rmm::mr::get_default_resource(),
+                                                                  cudaStream_t stream = 0)
+{   
+   // generate per-type size info
+   size_type type_sizes[cudf::NUM_TYPE_IDS] = { 0 };
+   for(int idx=cudf::EMPTY+1; idx<NUM_TYPE_IDS; idx++){      
+      if(idx == cudf::CATEGORY){ continue; }
+      cudf::experimental::type_dispatcher(cudf::data_type((type_id)idx), size_functor{}, &type_sizes[idx]);
+   }
+   
+   // slice each column into a set of sub-columns
+   std::vector<subcolumns> split_table;
+   for(auto iter = input.begin(); iter != input.end(); iter++){   
+      split_table.push_back(cudf::experimental::slice(*iter, splits));
+   }   
+
+   // compute total output sizes. doing this as a seperate step because it's likely
+   // that a kernel-y way of doing this will be two passes and the first step might be reusable
+   std::vector<std::unique_ptr<rmm::device_buffer>> output_buffers = build_output_buffers_reference(split_table, type_sizes, mr, stream);
+
+   // output data
+   return perform_split_reference(split_table, type_sizes, output_buffers);
+}
+
+std::vector<contiguous_split_result> contiguous_split(cudf::table_view const& input,
+                                                      std::vector<size_type> const& splits,
+                                                      rmm::mr::device_memory_resource* mr = rmm::mr::get_default_resource(),
+                                                      cudaStream_t stream = 0)
+{
+   return contiguous_split_reference(input, splits);
+}
+
+void split_test()
+{
+   /*
+   std::vector<std::unique_ptr<column>> columns;
+   int c0d[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+   wrapper<int> c0(c0d, c0d + 10);
+   columns.push_back(c0.release());
+
+   short c1d[] = { 20, 21, 22, 23, 24, 25, 26, 27, 28, 29 };
+   wrapper<short> c1(c1d, c1d + 10);
+   columns.push_back(c1.release());
+
+   double c2d[] = { 30, 31, 32, 33, 34, 35, 36, 37, 38, 39 };
+   wrapper<double> c2(c2d, c2d + 10);
+   columns.push_back(c2.release());
+   
+   cudf::experimental::table t(std::move(columns));
+   print_table(t.view());
+
+   std::vector<size_type> splits { 0, 5, 5, 10 };
+
+   auto out = contiguous_split(t.view(), splits);
+   
+   for(size_t idx=0; idx<out.size(); idx++){
+      print_table(out[idx].table);
+   }
+   */
+
+   std::vector<std::unique_ptr<column>> columns;
+   int c0d[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+   bool c0v[] ={ 1, 1, 1, 1, 0, 0, 1, 1, 1, 1 };
+   wrapper<int> c0(c0d, c0d + 10, c0v);
+   columns.push_back(c0.release());
+
+   short c1d[] = { 20, 21, 22, 23, 24, 25, 26, 27, 28, 29 };
+   bool c1v[] ={ 1, 1, 1, 0, 1, 1, 0, 1, 1, 1 };
+   wrapper<short> c1(c1d, c1d + 10, c1v);
+   columns.push_back(c1.release());
+
+   double c2d[] = { 30, 31, 32, 33, 34, 35, 36, 37, 38, 39 };
+   bool c2v[] ={ 1, 1, 0, 1, 1, 1, 1, 0, 1, 1 };
+   wrapper<double> c2(c2d, c2d + 10, c2v);
+   columns.push_back(c2.release());
+   
+   cudf::experimental::table t(std::move(columns));
+   print_table(t.view());
+
+   std::vector<size_type> splits { 0, 5, 5, 10 };
+
+   auto out = contiguous_split(t.view(), splits);
+   
+   for(size_t idx=0; idx<out.size(); idx++){
+      print_table(out[idx].table);
+   }
+
+   int whee = 10;
+   whee++;
+
+   /*
+   int num_els = 3;
+   int c0[] = { 0, 1, 2 };
+   wrapper<int> c0_w(c0, c0 + num_els);
+   std::vector<size_type> splits { 0, 2, 1, 3 };
+      
+   auto out = cudf::experimental::slice(c0_w, splits);
+
+   for(size_t idx=0; idx<out.size(); idx++){
+      print_column(out[idx]);      
+   }
+   
+   auto c = make_strings( {"abcdefghijklmnopqrstuvwxyz",
+                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                           "00000000000000000000000000"});
+   column_view cv = c->view();
+   std::vector<size_type> ssplits { 0, 2, 1, 3 };
+   auto sout = cudf::experimental::slice(cv, ssplits);
+   
+   for(size_t idx=0; idx<sout.size(); idx++){
+      print_column(sout[idx]);      
+   } 
+
+   int whee = 10;
+   whee++;
+   */  
+}
+
 int main()
 {
    // init stuff
@@ -526,8 +942,10 @@ int main()
    // rolling_window_test();
    // timestamp_parse_test();
    // column_equal_test();
-   copy_if_else_scalar_test();
+   // copy_if_else_scalar_test();
+   split_test();   
 
     // shut stuff down
    rmmFinalize();
 }
+
