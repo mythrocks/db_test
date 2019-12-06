@@ -873,14 +873,53 @@ struct column_buf_size_functor {
    }
 };
 
+
+template<typename T>
+struct column_copy_functor_impl {
+   void operator()(column_view const& in, char *&dst, std::vector<column_view>& out_cols)
+   {      
+      // there's some unnecessary recomputation of sizes happening here, but it really shouldn't affect much.
+      size_t data_size = 0;
+      size_t validity_size = 0;      
+      column_buf_size_functor_impl<T>{}(in, data_size, validity_size);
+      char* data = dst;
+      bitmask_type* validity = validity_size == 0 ? nullptr : reinterpret_cast<bitmask_type*>(dst + data_size);
+
+      // increment working buffer
+      dst += (data_size + validity_size);      
+
+      mutable_column_view mcv{in.type(), in.size(), data, validity};      
+      
+      // this is a double-dispatch, but I'm using it because returning a column_view through this
+      // functor is causing some odd compiler errors.
+      cudf::experimental::copy_range(in, mcv, 0, in.size(), 0);
+      out_cols.push_back(mcv);
+   }
+};
+
+template<>
+struct column_copy_functor_impl<string_view> {
+   void operator()(column_view const& in, char *&dst, std::vector<column_view>& out_cols){ };
+};
+
+struct column_copy_functor {
+   template<typename T>   
+   void operator()(column_view const& in, char *&dst, std::vector<column_view>& out_cols)
+   {
+      column_copy_functor_impl<T> fn{};
+      fn(in, dst, out_cols);
+   }
+};
+
+
 typedef std::vector<cudf::column_view> subcolumns;
 
-std::vector<std::unique_ptr<rmm::device_buffer>> build_output_buffers_reference( std::vector<subcolumns> const& split_table,                                                                                  
-                                                                                 rmm::mr::device_memory_resource* mr,
-                                                                                 cudaStream_t stream)
+std::vector<contiguous_split_result> contiguous_split_reference_internal(  std::vector<subcolumns> const& split_table,
+                                                                           rmm::mr::device_memory_resource* mr,
+                                                                           cudaStream_t stream)
 { 
    size_t num_out_tables = split_table[0].size();
-   std::vector<std::unique_ptr<rmm::device_buffer>> result;
+   std::vector<contiguous_split_result> result;
 
    // output packing for a given table will be:
    // (C0)(V0)(C1)(V1)
@@ -890,63 +929,27 @@ std::vector<std::unique_ptr<rmm::device_buffer>> build_output_buffers_reference(
       size_t subtable_data_size = 0;
       size_t subtable_validity_size = 0;
 
+      // compute sizes
       for(size_t c_idx=0; c_idx<split_table.size(); c_idx++){
-         column_view const& subcol = split_table[c_idx][t_idx];
+         column_view const& subcol = split_table[c_idx][t_idx];         
          cudf::experimental::type_dispatcher(subcol.type(), column_buf_size_functor{}, subcol, subtable_data_size, subtable_validity_size);
       }
 
-      // allocate
-      result.push_back(std::make_unique<rmm::device_buffer>(rmm::device_buffer{subtable_data_size + subtable_validity_size, stream, mr}));
+      // allocate the blob
+      auto device_buf = std::make_unique<rmm::device_buffer>(rmm::device_buffer{subtable_data_size + subtable_validity_size, stream, mr});
+      char* buf = static_cast<char*>(device_buf->data());      
+      
+      // create columns for the subtables
+      std::vector<column_view> out_cols;
+      for(size_t c_idx=0; c_idx<split_table.size(); c_idx++){
+         // copy
+         column_view const& subcol = split_table[c_idx][t_idx];                  
+         cudf::experimental::type_dispatcher(subcol.type(), column_copy_functor{}, subcol, buf, out_cols);
+      }
+   
+      result.push_back(contiguous_split_result{cudf::table_view{out_cols}, std::move(device_buf)});
    }
    
-   return result;
-}
-
-std::vector<contiguous_split_result> perform_split_reference(  std::vector<subcolumns> const& split_table,                                                               
-                                                               std::vector<std::unique_ptr<rmm::device_buffer>>& output_buffers)
-{    
-   size_t num_out_tables = split_table[0].size();
-   std::vector<contiguous_split_result> result;
-
-   // output packing for a given table will be:
-   // (C0)(V0)(C1)(V1)
-   // where Cx = column x and Vx = validity mask x
-   // padding to split_align boundaries between each buffer
-   for(size_t t_idx=0; t_idx<num_out_tables; t_idx++){
-      // destination column_views and backing data
-      std::vector<column_view> dst_cols;
-      char* dst = static_cast<char*>(output_buffers[t_idx]->data());      
-            
-      for(size_t c_idx=0; c_idx<split_table.size(); c_idx++){
-         column_view const& subcol = split_table[c_idx][t_idx];
-
-         // get data and validity sizes. 
-         size_t data_size = 0;
-         size_t validity_size = 0;
-         cudf::experimental::type_dispatcher(subcol.type(), column_buf_size_functor{}, subcol, data_size, validity_size);
-
-         // dst validity pointer
-         bitmask_type* dst_validity = nullptr;
-         if(subcol.nullable()){
-            dst_validity = reinterpret_cast<bitmask_type*>(dst + data_size);
-            validity_size = cudf::bitmask_allocation_size_bytes(subcol.size(), split_align);
-         }   
-                  
-         // copy the data
-         mutable_column_view new_col{subcol.type(), subcol.size(), dst, dst_validity};
-         cudf::experimental::copy_range(subcol, new_col, 0, subcol.size(), 0);         
-
-         // push the final column_view to the output
-         dst_cols.push_back(new_col);         
-
-         // increment dst buffers
-         dst += (data_size + validity_size);                 
-      }
-
-      // construct the final table view
-      result.push_back(contiguous_split_result{table_view{dst_cols}, std::move(output_buffers[t_idx])});
-   }
-      
    return result;
 }
 
@@ -963,11 +966,7 @@ std::vector<contiguous_split_result> contiguous_split_reference(  cudf::table_vi
       split_table.push_back(cudf::experimental::slice(*iter, splits));
    }   
 
-   // allocate per sub-table contiguous buffer
-   std::vector<std::unique_ptr<rmm::device_buffer>> output_buffers = build_output_buffers_reference(split_table, mr, stream);
-
-   // output data
-   return perform_split_reference(split_table, output_buffers);
+   return contiguous_split_reference_internal(split_table, mr, stream);
 }
 
 std::vector<contiguous_split_result> contiguous_split(cudf::table_view const& input,
@@ -1005,7 +1004,7 @@ void split_test()
       print_table(out[idx].table);
    }
    */
-
+  
    std::vector<std::unique_ptr<column>> columns;
    int c0d[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
    bool c0v[] ={ 1, 1, 1, 1, 0, 0, 1, 1, 1, 1 };
@@ -1034,8 +1033,8 @@ void split_test()
    }
 
    int whee = 10;
-   whee++;
-
+   whee++;   
+   
    /*
    int num_els = 3;
    int c0[] = { 0, 1, 2 };
@@ -1052,6 +1051,11 @@ void split_test()
                            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                            "00000000000000000000000000"});
    column_view cv = c->view();
+   int whee = 10;
+   whee++;
+   */
+
+   /*
    std::vector<size_type> ssplits { 0, 2, 1, 3 };
    auto sout = cudf::experimental::slice(cv, ssplits);
    
