@@ -1,22 +1,35 @@
 {        
    "tasks": [
-       {
-           "command": "make -j 24",
-           "isShellCommand": true,            
-           "label": "Makefile",
-           "showOutput": "always",
-           "group": {
-               "kind": "build",
-               "isDefault": true
-           },            
-           "args": [                
-           ],
-           "options": {
-               "cwd": "${workspaceFolder}"
-           },
-           "problemMatcher": [
-               "$gcc"
-           ]
-       }
+      {
+         "command": "make all -j 24 \"CUDF_DIR=/home/dbaranec/projects/cudf/cpp\"",
+         "isShellCommand": true,
+         "label": "Makefile (cudf)",
+         "showOutput": "always",
+         "group": {
+            "kind": "build",
+            "isDefault": true
+         },
+         "args": [],
+         "options": {
+            "cwd": "${workspaceFolder}"
+         },
+         "problemMatcher": [
+            "$gcc"
+         ]
+      },
+      {
+         "command": "make all -j 24 \"CUDF_DIR=/home/dbaranec/projects/cudf2/cpp\"",
+         "isShellCommand": true,
+         "label": "Makefile (cudf2)",
+         "showOutput": "always",
+         "group": "build",
+         "args": [],
+         "options": {
+            "cwd": "${workspaceFolder}"
+         },
+         "problemMatcher": [
+            "$gcc"
+         ]
+      }
    ]
 }
