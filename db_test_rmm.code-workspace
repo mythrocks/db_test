@@ -4,10 +4,7 @@
          "path": "."
       },
       {
-         "path": "/usr/local/cuda-10.1/targets/x86_64-linux/include/thrust"
-      },
-      {
-         "path": "/home/dbaranec/projects/cudf/cpp"
+         "path": "/home/dbaranec/projects/rmm"
       }
    ],
    "settings": {

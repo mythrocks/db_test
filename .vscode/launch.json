@@ -23,5 +23,24 @@
                }
            ]            
        },        
+       {
+        "name": "db_test_rmm",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/DB_TEST_RMM",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],            
+        "MIMode": "gdb",            
+        "miDebuggerPath": "/usr/bin/gdb",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for gdb",
+                "text": "-enable-pretty-printing",
+                "ignoreFailures": true
+            }
+        ]            
+    },  
    ]
 }

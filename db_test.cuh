@@ -119,4 +119,28 @@ void print_column(cudf::column_view const& c, bool draw_separators = true, int m
 void print_table(cudf::table_view const &tv);
 void print_gdf_column(gdf_column const& c);
 
-std::unique_ptr<cudf::experimental::table> create_random_int_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity);
+template<typename T>
+std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
+{       
+   auto valids = cudf::test::make_counting_transform_iterator(0, 
+      [](auto i) { 
+        return i % 2 == 0 ? true : false; 
+      }
+    );
+   std::vector<cudf::test::fixed_width_column_wrapper<T>> src_cols(num_columns);
+   for(int idx=0; idx<num_columns; idx++){
+      auto rand_elements = cudf::test::make_counting_transform_iterator(0, [](T i){return rand();});
+      if(include_validity){
+         src_cols[idx] = cudf::test::fixed_width_column_wrapper<T>(rand_elements, rand_elements + num_rows, valids);
+      } else {
+         src_cols[idx] = cudf::test::fixed_width_column_wrapper<T>(rand_elements, rand_elements + num_rows);
+      }
+   }      
+   std::vector<std::unique_ptr<cudf::column>> columns(num_columns);
+   std::transform(src_cols.begin(), src_cols.end(), columns.begin(), [](cudf::test::fixed_width_column_wrapper<T> &in){   
+      auto ret = in.release();
+      ret->has_nulls();
+      return ret;
+   });
+   return std::make_unique<cudf::experimental::table>(std::move(columns));   
+}
