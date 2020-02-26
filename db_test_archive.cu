@@ -1419,7 +1419,8 @@ void single_split_test_string( int64_t total_desired_bytes,
    int64_t num_rows = col_len_bytes / avg_string_len;      
       
    // generate table
-   auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i%2 == 0 ? true : false; });   
+   // auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i%2 == 0 ? true : false; });   
+   auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return rand() < (RAND_MAX/2) ? true : false; /*(i%2 == 0 ? true : false; */});   
    std::vector<cudf::test::strings_column_wrapper> src_cols;
    {
       std::vector<const char*> one_col(num_rows);
@@ -1665,7 +1666,8 @@ inline std::vector<cudf::experimental::table> create_expected_string_tables(std:
                 cudf::test::strings_column_wrapper wrap(strings[idx].begin()+indices[index], strings[idx].begin()+indices[index+1]);                
                 cols.push_back(wrap.release());
             } else {
-                auto valids = cudf::test::make_counting_transform_iterator(indices[index], [](auto i) { return i % 2 == 0 ? true : false; });
+                // auto valids = cudf::test::make_counting_transform_iterator(indices[index], [](auto i) { return i % 2 == 0 ? true : false; });
+                auto valids = cudf::test::make_counting_transform_iterator(indices[index], [](auto i) { return true; });
                 cudf::test::strings_column_wrapper wrap(strings[idx].begin()+indices[index], strings[idx].begin()+indices[index+1], valids);
                 cols.push_back(wrap.release());
             }
@@ -1720,8 +1722,8 @@ void split_test()
    int whee = 10;
    whee++;
    */
-   
-   /*
+
+   /* 
    std::vector<std::unique_ptr<column>> columns;
    int c0d[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
    bool c0v[] ={ 1, 1, 1, 1, 0, 0, 1, 1, 1, 1 };
@@ -1741,7 +1743,7 @@ void split_test()
    cudf::experimental::table t(std::move(columns));
    print_table(t.view());
 
-   std::vector<size_type> splits { 5, 10 };
+   std::vector<size_type> splits { 5 };
 
    auto out = cudf::experimental::contiguous_split(t.view(), splits, rmm::mr::get_default_resource());
    
@@ -1753,8 +1755,8 @@ void split_test()
    }   
 
    int whee = 10;
-   whee++; 
-   */  
+   whee++;    
+   */
 
    /*         
    int num_els = 3;
@@ -1782,13 +1784,13 @@ void split_test()
 
    int whee = 10;
    whee++;   
-   */
-              
-    auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i%2 == 0 ? true : false; });   
+   */    
+    // auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i%2 == 0 ? true : false; });
+    //auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return true; });
     std::vector<std::string> strings[2]     = { {"this", "is", "a", "column", "of", "strings"}, 
                                                 {"one", "two", "three", "four", "five", "six"} };
-    cudf::test::strings_column_wrapper sw[2] = { {strings[0].begin(), strings[0].end(), valids},
-                                                 {strings[1].begin(), strings[1].end(), valids} };
+    cudf::test::strings_column_wrapper sw[2] = { {strings[0].begin(), strings[0].end(), /*valids*/},
+                                                 {strings[1].begin(), strings[1].end(), /*valids*/} };
 
     std::vector<std::unique_ptr<cudf::column>> scols;
     scols.push_back(sw[0].release());
@@ -1804,16 +1806,18 @@ void split_test()
     EXPECT_EQ(expected.size(), result.size());
 
     for (unsigned long index = 0; index < result.size(); index++) {       
-        {
-         
-         printf("---------------------\n");
-         print_table(expected[index]);
-         print_table(result[index].table);
-         printf("---------------------\n");
-         cudf::test::expect_tables_equal(expected[index], result[index].table);
+      {
+        bool a = expected[index].get_column(0).nullable();
+        bool b = result[index].table.column(0).nullable();
+
+        printf("---------------------\n");
+        print_table(expected[index]);
+        print_table(result[index].table);
+        printf("---------------------\n");
+        // cudf::test::expect_tables_equal(expected[index], result[index].table);
+        // cudf::test::expect_tables_equivalent(expected[index], result[index].table);
       }
-    } 
-    
+    }     
 
    /*
     auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return true; });
@@ -1831,3 +1835,405 @@ void split_test()
    }
    */
 }
+
+/*
+__global__ void int_doubler(int *dst, int *src, int num_els)
+{
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  if(tid < num_els){
+    dst[tid] = src[tid] * 2;
+  }    
+}
+
+void mem_tester()
+{
+  int num_els = 16;
+
+  // reference
+  {
+    printf("REFERENCE TEST : ");
+    int *dst, *src;
+    CUDA_TRY(cudaMalloc(&src, sizeof(int) * num_els));
+    int val = 2;
+    for(int idx=0; idx<num_els; idx++){      
+      cudaMemcpy(src + idx, &val, sizeof(int), cudaMemcpyHostToDevice);
+    }
+    CUDA_TRY(cudaMalloc(&dst, sizeof(int) * num_els));
+
+    int_doubler<<<num_els, 1>>>(dst, src, num_els);
+    int chk[16];
+    cudaMemcpy(chk, dst, sizeof(int) * num_els, cudaMemcpyDeviceToHost);
+    for(int idx=0; idx<num_els; idx++){
+      if(idx < num_els-1){
+        printf("%d, ", chk[idx]);
+      } else {
+        printf("%d\n", chk[idx]);
+      }
+    }
+  }
+
+  // rmm
+  {
+    printf("RMM TEST : ");
+    int *dst, *src;
+    RMM_ALLOC(&src, sizeof(int) * num_els, 0);      
+    int val = 2;
+    for(int idx=0; idx<num_els; idx++){      
+      cudaMemcpy(src + idx, &val, sizeof(int), cudaMemcpyHostToDevice);
+    }
+    RMM_ALLOC(&dst, sizeof(int) * num_els, 0);    
+
+    int_doubler<<<num_els, 1>>>(dst, src, num_els);
+    int chk[16];
+    cudaMemcpy(chk, dst, sizeof(int) * num_els, cudaMemcpyDeviceToHost);
+    for(int idx=0; idx<num_els; idx++){
+      if(idx < num_els-1){
+        printf("%d, ", chk[idx]);
+      } else {
+        printf("%d\n", chk[idx]);
+      }
+    }  
+  }  
+}
+*/
+
+
+/*
+void parquet_writer_test()
+{   
+  using TypeParam = int;
+
+  using T = TypeParam;  
+     
+  srand(31337);
+  auto table1 = create_random_fixed_table<int>(4, 16, true);
+  auto split_views = cudf::experimental::split(*table1, { 8 });
+
+  print_table(*table1);
+  print_table(split_views[0]);
+  print_table(split_views[1]);
+  
+  cudf_io::write_parquet_args args{cudf_io::sink_info{"SlicedBad.parquet"}, split_views[1]};
+  cudf_io::write_parquet(args);  
+
+  cudf_io::read_parquet_args read_args{cudf_io::source_info{"SlicedBad.parquet"}};
+  auto result = cudf_io::read_parquet(read_args);      
+
+  cudf::test::expect_tables_equal(*result.tbl, split_views[1]);
+
+  int whee = 10;
+  whee++;
+}
+*/
+
+// ------------------
+//
+// Work
+//
+// ------------------
+/*
+void whee()
+{
+    cudf::size_type start = 0;    
+    auto valids = cudf::test::make_counting_transform_iterator(start, [](auto i) { return true; });    
+    
+    std::vector<std::string> strings[2]     = { {"", "this", "is", "a", "column", "of", "strings", "with", "in", "valid"}, 
+                                                {"", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"} };
+    
+    std::vector<std::unique_ptr<cudf::column>> cols;   
+    
+    auto iter0 = cudf::test::make_counting_transform_iterator(0, [](auto i) { return (i);});
+    auto c0 = cudf::test::fixed_width_column_wrapper<int>(iter0, iter0 + 10, valids);
+    cols.push_back(c0.release());
+    
+    auto iter1 = cudf::test::make_counting_transform_iterator(10, [](auto i) { return (i);});
+    auto c1 = cudf::test::fixed_width_column_wrapper<int>(iter1, iter1 + 10, valids);
+    cols.push_back(c1.release());
+
+    auto c2 = cudf::test::strings_column_wrapper(strings[0].begin(), strings[0].end(), valids);
+    cols.push_back(c2.release());
+
+    auto c3 = cudf::test::strings_column_wrapper(strings[1].begin(), strings[1].end(), valids);
+    cols.push_back(c3.release());
+
+    auto iter4 = cudf::test::make_counting_transform_iterator(20, [](auto i) { return (i);});
+    auto c4 = cudf::test::fixed_width_column_wrapper<int>(iter4, iter4 + 10, valids);
+    cols.push_back(c4.release());
+
+    auto tbl = cudf::experimental::table(std::move(cols));
+    
+    std::vector<cudf::size_type> splits{5};
+
+    auto result = cudf::experimental::contiguous_split(tbl, splits);
+    auto expected = cudf::experimental::split(tbl, splits);
+    
+    for (unsigned long index = 0; index < expected.size(); index++) {      
+      cudf::test::expect_tables_equal(expected[index], result[index].table);
+    }    
+}*/
+
+/*
+template<typename T>
+std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
+{       
+    auto valids = cudf::test::make_counting_transform_iterator(0, 
+        [](auto i) { 
+          return i % 2 == 0 ? true : false; 
+        }
+      );
+    std::vector<cudf::test::fixed_width_column_wrapper<T>> src_cols(num_columns);
+    for(int idx=0; idx<num_columns; idx++){
+        auto rand_elements = cudf::test::make_counting_transform_iterator(0, [](T i){return rand();});
+        if(include_validity){
+          src_cols[idx] = cudf::test::fixed_width_column_wrapper<T>(rand_elements, rand_elements + num_rows, valids);
+        } else {
+          src_cols[idx] = cudf::test::fixed_width_column_wrapper<T>(rand_elements, rand_elements + num_rows);
+        }
+    }      
+    std::vector<std::unique_ptr<cudf::column>> columns(num_columns);
+    std::transform(src_cols.begin(), src_cols.end(), columns.begin(), [](cudf::test::fixed_width_column_wrapper<T> &in){   
+        auto ret = in.release();
+        ret->has_nulls();
+        return ret;
+    });
+    return std::make_unique<cudf::experimental::table>(std::move(columns));   
+}
+*/
+/*
+void PQ_write()
+{
+    int64_t total_desired_bytes = (int64_t)3 * 1024 * 1024 * 1024;
+    cudf::size_type num_cols = 1024;
+    cudf::size_type num_tables = 64;
+
+    cudf::size_type el_size = 4;
+    int64_t num_rows = (total_desired_bytes / (num_cols * el_size)) / num_tables;
+
+    srand(31337);
+    std::vector<std::unique_ptr<cudf::experimental::table>> tables;        
+    for(cudf::size_type idx=0; idx<num_tables; idx++){
+      tables.push_back(create_random_fixed_table<int>(num_cols, num_rows, true));
+    }
+
+    //for(auto _ : state){
+        //cuda_event_timer raii(state, true); // flush_l2_cache = true, stream = 0            
+        printf("WRITE BEGIN\n");
+        cudf_io::write_parquet_chunked_args args{cudf_io::sink_info()};
+
+        auto state = cudf_io::write_parquet_chunked_begin(args);
+        std::for_each(tables.begin(), tables.end(), [&state](std::unique_ptr<cudf::experimental::table> const& tbl){
+          cudf_io::write_parquet_chunked(*tbl, state);
+        });
+        cudf_io::write_parquet_chunked_end(state);
+    //}
+
+    //state.SetBytesProcessed(
+      //  static_cast<int64_t>(state.iterations())*state.range(0));
+}
+*/
+
+/*
+namespace cudf_io = cudf::experimental::io;
+
+cudf::test::TempDirTestEnvironment* const temp_env = static_cast<cudf::test::TempDirTestEnvironment*>(
+    ::testing::AddGlobalTestEnvironment(new cudf::test::TempDirTestEnvironment));
+void json_test()
+{  
+  const std::string fname = temp_env->get_temp_dir() + "ArrowFileSource.csv";
+
+  std::ofstream outfile(fname, std::ofstream::out);
+  outfile << "[9]\n[8]\n[7]\n[6]\n[5]\n[4]\n[3]\n[2]\n";
+  outfile.close();
+  // ASSERT_TRUE(checkFile(fname));
+
+  std::shared_ptr<arrow::io::ReadableFile> infile;
+  ASSERT_TRUE(arrow::io::ReadableFile::Open(fname, &infile).ok());
+
+  cudf_io::read_json_args in_args(cudf_io::source_info{infile});
+  in_args.lines = true;
+  in_args.dtype = {"int8"};
+  cudf_io::table_with_metadata result = cudf_io::read_json(in_args);
+
+  EXPECT_EQ(result.tbl->num_columns(), static_cast<cudf::size_type>(in_args.dtype.size()));
+  EXPECT_EQ(result.tbl->get_column(0).type().id(), cudf::INT8);
+
+  auto validity = cudf::test::make_counting_transform_iterator(
+      0, [](auto i) { return true; });
+  
+  // cudf::test::expect_columns_equal(result.tbl->get_column(0), int8_wrapper{{9, 8, 7, 6, 5, 4, 3, 2}, validity});   
+  cudf::test::expect_columns_equal(result.tbl->get_column(0), int8_wrapper{{9, 8, 7, 6, 5, 4, 3, 2}, validity}); 
+  int whee = 10;
+  whee++;
+}
+*/
+
+/*
+template<typename T>
+std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
+{       
+    auto valids = cudf::test::make_counting_transform_iterator(0, 
+        [](auto i) { 
+          return i % 2 == 0 ? true : false; 
+        }
+      );
+    std::vector<cudf::test::fixed_width_column_wrapper<T>> src_cols(num_columns);
+    for(int idx=0; idx<num_columns; idx++){
+        auto rand_elements = cudf::test::make_counting_transform_iterator(0, [](T i){return rand();});
+        if(include_validity){
+          src_cols[idx] = cudf::test::fixed_width_column_wrapper<T>(rand_elements, rand_elements + num_rows, valids);
+        } else {
+          src_cols[idx] = cudf::test::fixed_width_column_wrapper<T>(rand_elements, rand_elements + num_rows);
+        }
+    }      
+    std::vector<std::unique_ptr<cudf::column>> columns(num_columns);
+    std::transform(src_cols.begin(), src_cols.end(), columns.begin(), [](cudf::test::fixed_width_column_wrapper<T> &in){   
+        auto ret = in.release();
+        ret->has_nulls();
+        return ret;
+    });
+    return std::make_unique<cudf::experimental::table>(std::move(columns));   
+}
+*/
+
+/*
+#include <cudf/io/functions.hpp>
+void parquet_writer_test()
+{
+  namespace cudf_io = cudf::experimental::io;
+
+  srand(31337);
+  auto table1 = create_random_fixed_table<int>(5, 5, false);
+  auto table2 = create_random_fixed_table<int>(5, 5, false);
+
+  srand(31337);
+  auto full_table = create_random_fixed_table<int>(5, 10, false);
+      
+  print_table(*table1);
+  print_table(*table2);
+
+  cudf_io::write_parquet_chunked_args args{cudf_io::sink_info{"whee"}};
+  auto state = cudf_io::write_parquet_chunked_begin(args);  
+  cudf_io::write_parquet_chunked(*table1, state);
+  cudf_io::write_parquet_chunked(*table2, state);  
+  cudf_io::write_parquet_chunked_end(state);  
+
+  //cudf_io::write_parquet_args args{cudf_io::sink_info{"whee"}, *table1};
+  //cudf_io::write_parquet(args);
+
+  cudf_io::read_parquet_args read_args{cudf_io::source_info{"whee"}};
+  auto result = cudf_io::read_parquet(read_args);
+  print_table(*result.tbl);
+  //cudf::test::expect_tables_equal(*result.tbl, *full_table);  
+}
+*/
+
+/*
+namespace cudf_io = cudf::experimental::io;
+
+template <typename T>
+using column_wrapper =
+    typename std::conditional<std::is_same<T, cudf::string_view>::value,
+                              cudf::test::strings_column_wrapper,
+                              cudf::test::fixed_width_column_wrapper<T>>::type;
+using column = cudf::column;
+using table = cudf::experimental::table;
+using table_view = cudf::table_view;
+
+// Global environment for temporary files
+auto const temp_env = static_cast<cudf::test::TempDirTestEnvironment*>(
+    ::testing::AddGlobalTestEnvironment(
+        new cudf::test::TempDirTestEnvironment));
+
+// Helper function to compare two tables
+void whee(cudf::table_view const& lhs,
+                         cudf::table_view const& rhs) {
+  EXPECT_EQ(lhs.num_columns(), rhs.num_columns());
+  auto expected = lhs.begin();
+  auto result = rhs.begin();
+  while (result != rhs.end()) {
+    cudf::test::expect_columns_equal(*expected++, *result++);
+  }  
+}
+
+void pq()
+{
+  srand(31337);
+  auto table1 = create_random_fixed_table<int>(512, 4096, true);
+  auto table2 = create_random_fixed_table<int>(512, 8192, true);
+  
+  auto full_table = cudf::experimental::concatenate({*table1, *table2});          
+
+  auto filepath = temp_env->get_temp_filepath("ChunkedLarge.parquet");
+  cudf_io::write_parquet_chunked_args args{cudf_io::sink_info{filepath}};
+  auto state = cudf_io::write_parquet_chunked_begin(args);  
+  cudf_io::write_parquet_chunked(*table1, state);
+  cudf_io::write_parquet_chunked(*table2, state);  
+  cudf_io::write_parquet_chunked_end(state);    
+
+  cudf_io::read_parquet_args read_args{cudf_io::source_info{filepath}};
+  auto result = cudf_io::read_parquet(read_args);
+  
+  cudf::test::expect_tables_equal(*result.tbl, *full_table);  
+}
+*/
+
+
+
+
+/*
+class custom_data_sink : public cudf::io::data_sink {
+public:
+  explicit custom_data_sink(){
+    printf("CUSTOM DATA SINK CONSTRUCTOR\n");
+  }
+
+  virtual ~custom_data_sink() {
+    printf("CUSTOM DATA SINK DESTRUCTOR\n");
+  }
+
+  void write(void const* data, size_t size) override {
+    printf("CUSTOM DATA SINK WRITE : %lu, %lu\n", reinterpret_cast<int64_t>(data), size);
+  }
+
+  bool supports_gpu_write(){
+    return true;
+  }
+
+  void write_gpu(void const* gpu_data, size_t size){        
+    printf("CUSTOM DATA SINK GPU WRITE : %lu, %lu\n", reinterpret_cast<int64_t>(gpu_data), size);
+  }
+
+  void flush() override {
+    printf("CUSTOM DATA SINK FLUSH\n");  
+  }
+
+  size_t bytes_written() override {
+    printf("CUSTOM DATA SINK BYTES WRITTEN\n");  
+    return 0;
+  }
+};
+
+void custom_sink_example()
+{
+  custom_data_sink custom_sink;
+
+  namespace cudf_io = cudf::experimental::io;
+
+  srand(31337);
+  auto table1 = create_random_fixed_table<int>(5, 5, false);  
+
+  // custom_sink lives across multiple write_parquet() calls
+  {
+    cudf_io::write_parquet_args args{cudf_io::sink_info{&custom_sink}, *table1};  
+    cudf_io::write_parquet(args);
+  }
+  {
+    cudf_io::write_parquet_args args{cudf_io::sink_info{&custom_sink}, *table1};  
+    cudf_io::write_parquet(args);
+  }
+  {
+    cudf_io::write_parquet_args args{cudf_io::sink_info{&custom_sink}, *table1};  
+    cudf_io::write_parquet(args);
+  }  
+}
+*/

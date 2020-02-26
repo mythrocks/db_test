@@ -25,4 +25,4 @@ db_test_rmm.o: db_test_rmm.cu
 	nvcc $(CUDA_DEFINES) $(CUDF_INCLUDES) $(CUDA_FLAGS) -c db_test_rmm.cu -g
 
 db_test_rmm: db_test_rmm.o rmm
-	/usr/bin/c++   -Werror -O3 -DNDEBUG  -Wl,--disable-new-dtags db_test_rmm.o -o DB_TEST_RMM -L/usr/local/cuda/targets/x86_64-linux/lib/stubs  -L/usr/local/cuda/targets/x86_64-linux/lib -L$(RMM_DIR)/build -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib/stubs:.:../cuda-linux64-mixed-rel-nightly/lib64:$(RMM_DIR)/build:/usr/local/cuda/targets/x86_64-linux/lib -lrmm -lpthread -Wl,--whole-archive -Wl,--no-whole-archive -lnvrtc -lcudart -lcuda -lcudadevrt -lcudart_static -lrt -lpthread -ldl
+	/usr/bin/c++   -Werror -O3 -DNDEBUG  -Wl,--disable-new-dtags db_test_rmm.o -o DB_TEST_RMM -L/usr/local/cuda/targets/x86_64-linux/lib/stubs  -L/usr/local/cuda/targets/x86_64-linux/lib -L$(RMM_DIR)/build -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib/stubs:.:/usr/local/cuda/lib64:$(RMM_DIR)/build:/usr/local/cuda/targets/x86_64-linux/lib -lrmm -lpthread -Wl,--whole-archive -Wl,--no-whole-archive -lnvrtc -lcudart -lcuda -lcudadevrt -lcudart_static -lrt -lpthread -ldl
