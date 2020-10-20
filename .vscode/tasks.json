@@ -1,49 +1,49 @@
 {        
    "tasks": [
-    {
-      "command": "make db_test -j 24 \"CUDF_DIR=/home/dbaranec/projects/cudf/cpp\"",
-      "isShellCommand": true,
-      "label": "Makefile (cudf)",
-      "showOutput": "always",
-      "group": "build",
-      "args": [],
-      "options": {
-        "cwd": "${workspaceFolder}"
+      {
+         "command": "make db_test -j 24 \"CUDF_DIR=/home/dbaranec/projects/cudf/cpp\"",
+         "isShellCommand": true,
+         "label": "Makefile (cudf)",
+         "showOutput": "always",
+         "group": {
+            "kind": "build",
+            "isDefault": true
+         },
+         "args": [],
+         "options": {
+            "cwd": "${workspaceFolder}"
+         },
+         "problemMatcher": [
+            "$gcc"
+         ]
       },
-      "problemMatcher": [
-        "$gcc"
-      ]
-    },
-    {
-      "command": "make db_test -j 24 \"CUDF_DIR=/home/dbaranec/projects/cudf2/cpp\"",
-      "isShellCommand": true,
-      "label": "Makefile (cudf2)",
-      "showOutput": "always",
-      "group": "build",
-      "args": [],
-      "options": {
-        "cwd": "${workspaceFolder}"
+      {
+         "command": "make db_test -j 24 \"CUDF_DIR=/home/dbaranec/projects/cudf2/cpp\"",
+         "isShellCommand": true,
+         "label": "Makefile (cudf2)",
+         "showOutput": "always",
+         "group": "build",
+         "args": [],
+         "options": {
+            "cwd": "${workspaceFolder}"
+         },
+         "problemMatcher": [
+            "$gcc"
+         ]
       },
-      "problemMatcher": [
-        "$gcc"
-      ]
-    },
-    {
-      "command": "make db_test_rmm -j 24",
-      "isShellCommand": true,
-      "label": "Makefile (db_test_rmm)",
-      "showOutput": "always",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "args": [],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": [
-        "$gcc"
-      ]
-    }
-  ]
+      {
+         "command": "make db_test_rmm -j 24",
+         "isShellCommand": true,
+         "label": "Makefile (db_test_rmm)",
+         "showOutput": "always",
+         "group": "build",
+         "args": [],
+         "options": {
+            "cwd": "${workspaceFolder}"
+         },
+         "problemMatcher": [
+            "$gcc"
+         ]
+      }
+   ]
 }
