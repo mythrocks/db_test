@@ -46,7 +46,8 @@ struct printy_impl {
       if(draw_separators){
          std::cout << "-----------------------------\n";
       }
-
+      
+      /*
       std::cout << "D: ";
 
       int num_els = max_els > 0 ? min(max_els, cv.size()) : cv.size();
@@ -66,6 +67,8 @@ struct printy_impl {
       if(cv.nullable()){         
          print_nullmask(cv, draw_separators, max_els);
       }
+      */
+      test::print(cv);
 
       if(draw_separators){
          std::cout << "-----------------------------\n";
@@ -143,7 +146,7 @@ struct printy {
 
 void print_column(column_view const& c, bool draw_separators, int max_els) 
 { 
-   cudf::experimental::type_dispatcher(c.type(), printy{}, c, draw_separators, max_els); 
+   cudf::type_dispatcher(c.type(), printy{}, c, draw_separators, max_els); 
 }
 void print_table(table_view const &tv)
 { 
@@ -158,6 +161,7 @@ void print_table(table_view const &tv)
    std::cout << "-----------------------------\n";
 }
 
+/*
 struct gdf_printy {
    gdf_column const &c;
 
@@ -218,3 +222,4 @@ struct gdf_printy {
    }
 };
 void print_gdf_column(gdf_column const& c) { cudf::experimental::type_dispatcher(cudf::data_type((cudf::type_id)c.dtype), gdf_printy{c}); }
+*/

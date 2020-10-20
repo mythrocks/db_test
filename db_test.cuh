@@ -4,11 +4,6 @@
 #include <time.h>
 #include <unistd.h>
 #include <iostream>
-
-#include <cudf/cudf.h>
-#include <tests/utilities/legacy/column_wrapper.cuh>
-#include <bitmask/legacy/bit_mask.cuh>
-#include <bitmask/legacy/legacy_bitmask.hpp>
 #include <cudf/column/column_device_view.cuh>
 #include <cudf/column/column_factories.hpp>
 #include <cudf/utilities/type_dispatcher.hpp>
@@ -16,13 +11,14 @@
 #include <cudf/replace.hpp>
 #include <cudf/table/table.hpp>
 #include <cudf/table/table_view.hpp>
-#include <cudf/legacy/rolling.hpp>
 
-#include <tests/utilities/column_wrapper.hpp>
-#include <tests/utilities/column_utilities.hpp>
-#include <tests/utilities/table_utilities.hpp>
-#include <tests/utilities/base_fixture.hpp>
+#include <cudf_test/column_wrapper.hpp>
+#include <cudf_test/column_utilities.hpp>
+#include <cudf_test/table_utilities.hpp>
+#include <cudf_test/base_fixture.hpp>
 #include <cudf/detail/utilities/cuda.cuh>
+
+#include <rmm/rmm_api.h>
 
 #include <cub/cub.cuh>
 
@@ -31,17 +27,25 @@
 #include "nvstrings/NVStrings.h"
 
 #include <cudf/scalar/scalar.hpp>
+#include <cudf/scalar/scalar_factories.hpp>
 
 #include <cudf/detail/copy_if_else.cuh>
 #include <cudf/detail/utilities/integer_utils.hpp>
 
-#include <cudf/legacy/io_readers.hpp>
-#include <tests/io/legacy/io_test_utils.hpp>
-#include <cudf/io/functions.hpp>
+// #include <cudf/lists/list_view.cuh>
 
 #include <arrow/io/api.h>
 
+#include <cudf/binaryop.hpp>
+
+#include <cudf/filling.hpp>
+
 #include <fstream>
+
+#include <cudf/detail/gather.hpp>
+#include <cudf/dictionary/encode.hpp>
+#include <rmm/rmm_api.h>
+#include <simt/chrono>
 
 #define wrapper cudf::test::fixed_width_column_wrapper
 using float_wrapper = wrapper<float>;
@@ -76,12 +80,14 @@ struct scope_timer_manual {
 
    void start()
    {
-      clock_gettime(CLOCK_MONOTONIC, &m_start);
+      int err = clock_gettime(CLOCK_MONOTONIC, &m_start);
+      CUDF_EXPECTS(err == 0, "clock_gettime() failed");
    }
 
    void end()
-   {      
-      clock_gettime(CLOCK_MONOTONIC, &m_end);          
+   {            
+      int err = clock_gettime(CLOCK_MONOTONIC, &m_end);          
+      CUDF_EXPECTS(err == 0, "clock_gettime() failed");
       if(!silent){
          for(int idx=0; idx<indent; idx++){
             printf("   ");
@@ -93,6 +99,10 @@ struct scope_timer_manual {
    float total_time_ms()
    {
       return (float)total_time_raw() / (float)1000000.0f;
+   }
+   float total_time_ns()
+   {
+      return (float)total_time_raw() / (float)1000.0f;
    }
    size_t total_time_raw()
    {
@@ -117,11 +127,10 @@ struct scope_timer : public scope_timer_manual {
 
 void print_column(cudf::column_view const& c, bool draw_separators = true, int max_els = 0);
 void print_table(cudf::table_view const &tv);
-void print_gdf_column(gdf_column const& c);
 
 /*
 template<typename T>
-std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
+std::unique_ptr<cudf::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
 {       
    auto valids = cudf::test::make_counting_transform_iterator(0, 
       [](auto i) { 
@@ -143,12 +152,12 @@ std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_
       ret->has_nulls();
       return ret;
    });
-   return std::make_unique<cudf::experimental::table>(std::move(columns));   
+   return std::make_unique<cudf::table>(std::move(columns));   
 }
 */
 
 template<typename T>
-std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
+std::unique_ptr<cudf::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
 {       
    auto valids = cudf::test::make_counting_transform_iterator(0, 
       [](auto i) { 
@@ -170,5 +179,5 @@ std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_
       ret->has_nulls();
       return ret;
    });
-   return std::make_unique<cudf::experimental::table>(std::move(columns));   
+   return std::make_unique<cudf::table>(std::move(columns));   
 }

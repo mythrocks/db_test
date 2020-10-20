@@ -68,7 +68,7 @@ void copy_if_else_test()
    // bool exp_v[]   = { 1, 1, 1, 1 };
    wrapper<T> expected_w(expected, expected + num_els);
 
-   auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);
+   auto out = cudf::copy_if_else(lhs_w, rhs_w, mask_w);
    print_column(*out);
    cudf::test::expect_columns_equal(out->view(), expected_w);
    */
@@ -82,7 +82,7 @@ void copy_if_else_test()
    bool mask[] = { 1, 0, 1, 0, 1, 0 };
    bool_wrapper mask_w(mask, mask + 6);  
       
-   auto results = cudf::experimental::copy_if_else(strings1, strings2, mask_w);
+   auto results = cudf::copy_if_else(strings1, strings2, mask_w);
       
    std::vector<const char*> h_expected;
    for( cudf::size_type idx=0; idx < static_cast<cudf::size_type>(h_strings2.size()); ++idx )
@@ -141,9 +141,9 @@ std::unique_ptr<column> _copy_if_else( cudf::scalar const& lhs, column_view cons
 
    auto bool_mask_device_p = column_device_view::create(boolean_mask);
    column_device_view bool_mask_device = *bool_mask_device_p;
-   auto filter = [bool_mask_device] __device__ (cudf::size_type i) { return bool_mask_device.element<cudf::experimental::bool8>(i); };
+   auto filter = [bool_mask_device] __device__ (cudf::size_type i) { return bool_mask_device.element<cudf::bool8>(i); };
 
-   return cudf::experimental::detail::copy_if_else(lhs, rhs, filter, mr, stream);
+   return cudf::detail::copy_if_else(lhs, rhs, filter, mr, stream);
 }
 */
 
@@ -173,7 +173,7 @@ void copy_if_else_scalar_test()
    bool expected_v[]   = { 1, 1, 1, 1, 0 };
    wrapper<T> expected_w(expected, expected + num_els, expected_v);   
       
-   auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);
+   auto out = cudf::copy_if_else(lhs_w, rhs_w, mask_w);
    column_view out_v = out->view();
    print_column(out_v);
    cudf::test::expect_columns_equal(out->view(), expected_w);
@@ -191,7 +191,7 @@ void copy_if_else_scalar_test()
    T expected[]   = { 5, 6, 6, 5 };   
    wrapper<T> expected_w(expected, expected + num_els);
 
-   auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);
+   auto out = cudf::copy_if_else(lhs_w, rhs_w, mask_w);
    column_view out_v = out->view();
    print_column(out_v);
    cudf::test::expect_columns_equal(out_v, expected_w);   
@@ -215,7 +215,7 @@ void copy_if_else_scalar_test()
       bool exp_m[]   = { 1, 0, 1, 0 };
       wrapper<T> expected_w(expected, expected + num_els, exp_m);
 
-      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);     
+      auto out = cudf::copy_if_else(lhs_w, rhs_w, mask_w);     
       column_view out_v = out->view();
       print_column(out_v);
       cudf::test::expect_columns_equal(out->view(), expected_w);  
@@ -238,7 +238,7 @@ void copy_if_else_scalar_test()
       bool exp_m[]   = { 1, 1, 1, 0 };
       wrapper<T> expected_w(expected, expected + num_els, exp_m);
 
-      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);     
+      auto out = cudf::copy_if_else(lhs_w, rhs_w, mask_w);     
       column_view out_v = out->view();
       print_column(out_v);
       cudf::test::expect_columns_equal(out->view(), expected_w);  
@@ -260,7 +260,7 @@ void copy_if_else_scalar_test()
       bool exp_m[]   = { 1, 0, 1, 1 };
       wrapper<T> expected_w(expected, expected + num_els, exp_m);
 
-      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);     
+      auto out = cudf::copy_if_else(lhs_w, rhs_w, mask_w);     
       column_view out_v = out->view();
       print_column(out_v);
       cudf::test::expect_columns_equal(out->view(), expected_w);  
@@ -281,7 +281,7 @@ void copy_if_else_scalar_test()
       T expected[]   = { 5, 6, 5, 5 };      
       wrapper<T> expected_w(expected, expected + num_els);
 
-      auto out = cudf::experimental::copy_if_else(lhs_w, rhs_w, mask_w);     
+      auto out = cudf::copy_if_else(lhs_w, rhs_w, mask_w);     
       column_view out_v = out->view();
       print_column(out_v);
       cudf::test::expect_columns_equal(out->view(), expected_w);  
@@ -310,8 +310,8 @@ void _copy_in_place_kernel( column_device_view const in,
                            T val_subtract)
 {
    const size_type tid = threadIdx.x + blockIdx.x * block_size;
-   const int warp_id = tid / cudf::experimental::detail::warp_size;
-   const size_type warps_per_grid = gridDim.x * block_size / cudf::experimental::detail::warp_size;      
+   const int warp_id = tid / cudf::detail::warp_size;
+   const size_type warps_per_grid = gridDim.x * block_size / cudf::detail::warp_size;      
 
    // begin/end indices for the column data
    size_type begin = 0;      
@@ -330,7 +330,7 @@ void _copy_in_place_kernel( column_device_view const in,
    //if(tid == 0){ printf("warp_end : %d\n", warp_begin); }
 
    // lane id within the current warp   
-   const int lane_id = threadIdx.x % cudf::experimental::detail::warp_size;
+   const int lane_id = threadIdx.x % cudf::detail::warp_size;
    
    // current warp.
    size_type warp_cur = warp_begin + warp_id;   
@@ -444,9 +444,9 @@ struct _column_copy_functor {
                                  in.null_mask(), in.null_mask() == nullptr ? UNKNOWN_NULL_COUNT : 0,
                                  in.offset()};
          
-         cudf::size_type num_els = cudf::util::round_up_safe(strings_c.offsets().size(), cudf::experimental::detail::warp_size);
+         cudf::size_type num_els = cudf::util::round_up_safe(strings_c.offsets().size(), cudf::detail::warp_size);
          constexpr int block_size = 256;
-         cudf::experimental::detail::grid_1d grid{num_els, block_size, 1};         
+         cudf::detail::grid_1d grid{num_els, block_size, 1};         
          if(in.nullable()){
             _copy_in_place_kernel<block_size, size_type, true><<<grid.num_blocks, block_size, 0, 0>>>(
                               *column_device_view::create(in_offsets_and_validity), 
@@ -471,9 +471,9 @@ struct _column_copy_functor {
          CUDF_EXPECTS(chars_col.offset() == 0, "Expected input chars column to have an offset of 0");
          column_view in_chars{ chars_col.type(), static_cast<size_type>(split_info.chars_size), chars_col.data<char>() + split_info.chars_offset };
                                  
-         cudf::size_type num_els = cudf::util::round_up_safe(static_cast<size_type>(split_info.chars_size), cudf::experimental::detail::warp_size);
+         cudf::size_type num_els = cudf::util::round_up_safe(static_cast<size_type>(split_info.chars_size), cudf::detail::warp_size);
          constexpr int block_size = 256;
-         cudf::experimental::detail::grid_1d grid{num_els, block_size, 1};         
+         cudf::detail::grid_1d grid{num_els, block_size, 1};         
          _copy_in_place_kernel<block_size, char, false><<<grid.num_blocks, block_size, 0, 0>>>(
                            *column_device_view::create(in_chars),
                            split_info.chars_size,
@@ -502,9 +502,9 @@ struct _column_copy_functor {
       dst += (split_info.data_size + split_info.validity_size);
 
       // custom copy kernel (which should probably just be an in-place copy() function in cudf.
-      cudf::size_type num_els = cudf::util::round_up_safe(in.size(), cudf::experimental::detail::warp_size);
+      cudf::size_type num_els = cudf::util::round_up_safe(in.size(), cudf::detail::warp_size);
       constexpr int block_size = 256;
-      cudf::experimental::detail::grid_1d grid{num_els, block_size, 1};
+      cudf::detail::grid_1d grid{num_els, block_size, 1};
       
       // so there's a significant performance issue that comes up. our incoming column_view objects
       // are the result of a slice.  because of this, they have an UNKNOWN_NULL_COUNT.  because of that,
@@ -654,7 +654,7 @@ contiguous_split_result _alloc_and_copy(cudf::table_view const& t, rmm::mr::devi
    size_t total_size = 0;
    column_index = 0;
    std::for_each(t.begin(), t.end(), [&total_size, &column_index, &split_info](cudf::column_view const& c){   
-      total_size += cudf::experimental::type_dispatcher(c.type(), _column_buffer_size_functor{}, c, split_info[column_index]);
+      total_size += cudf::type_dispatcher(c.type(), _column_buffer_size_functor{}, c, split_info[column_index]);
       column_index++;
    });
 
@@ -675,7 +675,7 @@ contiguous_split_result _alloc_and_copy(cudf::table_view const& t, rmm::mr::devi
    out_cols.reserve(t.num_columns());
    column_index = 0;   
    std::for_each(t.begin(), t.end(), [&out_cols, &buf, &column_index, &split_info](cudf::column_view const& c){
-      cudf::experimental::type_dispatcher(c.type(), _column_copy_functor{}, c, split_info[column_index], buf, out_cols);
+      cudf::type_dispatcher(c.type(), _column_copy_functor{}, c, split_info[column_index], buf, out_cols);
       column_index++;
    });   
    
@@ -689,7 +689,7 @@ std::vector<contiguous_split_result> _contiguous_split(cudf::table_view const& i
                                                       rmm::mr::device_memory_resource* mr,
                                                       cudaStream_t stream)
 {          
-   auto subtables = cudf::experimental::split(input, splits);
+   auto subtables = cudf::split(input, splits);
 
 /*
    for(int idx=0; idx<(int)subtables.size(); idx++){
@@ -748,7 +748,7 @@ std::vector<contiguous_split_result> _contiguous_split(cudf::table_view const& i
                                                       std::vector<size_type> const& splits,
                                                       rmm::mr::device_memory_resource* mr)
 {    
-   return cudf::experimental::detail::_contiguous_split(input, splits, mr, (cudaStream_t)0);   
+   return cudf::detail::_contiguous_split(input, splits, mr, (cudaStream_t)0);   
 }
 
 #endif
@@ -763,7 +763,6 @@ namespace detail {
 namespace {
 
 using namespace::cudf;
-using namespace::cudf::experimental;
 
 template <typename S>
 __device__ inline S round_up_safe_nothrow(S number_to_round, S modulus) {
@@ -800,8 +799,8 @@ void copy_in_place_kernel( column_device_view const in,
                            mutable_column_device_view out)
 {
    const size_type tid = threadIdx.x + blockIdx.x * block_size;
-   const int warp_id = tid / cudf::experimental::detail::warp_size;
-   const size_type warps_per_grid = gridDim.x * block_size / cudf::experimental::detail::warp_size;      
+   const int warp_id = tid / cudf::detail::warp_size;
+   const size_type warps_per_grid = gridDim.x * block_size / cudf::detail::warp_size;      
 
    // begin/end indices for the column data
    size_type begin = 0;
@@ -813,7 +812,7 @@ void copy_in_place_kernel( column_device_view const in,
    size_type warp_end = cudf::word_index(end-1);      
 
    // lane id within the current warp   
-   const int lane_id = threadIdx.x % cudf::experimental::detail::warp_size;
+   const int lane_id = threadIdx.x % cudf::detail::warp_size;
    
    // current warp.
    size_type warp_cur = warp_begin + warp_id;   
@@ -862,8 +861,8 @@ void copy_in_place_strings_kernel(size_type                        num_rows,
                                   char* __restrict__               chars_out)
 {   
    const size_type tid = threadIdx.x + blockIdx.x * block_size;
-   const int warp_id = tid / cudf::experimental::detail::warp_size;
-   const size_type warps_per_grid = gridDim.x * block_size / cudf::experimental::detail::warp_size;   
+   const int warp_id = tid / cudf::detail::warp_size;
+   const size_type warps_per_grid = gridDim.x * block_size / cudf::detail::warp_size;   
    
    // how many warps we'll be processing. with strings, the chars and offsets
    // lengths may be different.  so we'll just march the worst case.
@@ -880,7 +879,7 @@ void copy_in_place_strings_kernel(size_type                        num_rows,
    size_type validity_warp_end = cudf::word_index(num_rows-1);  
 
    // lane id within the current warp   
-   const int lane_id = threadIdx.x % cudf::experimental::detail::warp_size;
+   const int lane_id = threadIdx.x % cudf::detail::warp_size;
 
    size_type warp_cur = warp_begin + warp_id;
    size_type index = tid;
@@ -974,9 +973,9 @@ struct column_copy_functor {
       column_view in_chars = in.child(strings_column_view::chars_column_index);      
       
       // 1 combined kernel call that copies chars, offsets and validity in one pass
-      cudf::size_type num_els = cudf::util::round_up_safe(std::max(split_info.chars_size, in_offsets.size() + 1)/*strings_c.offsets().size()*/, cudf::experimental::detail::warp_size);
+      cudf::size_type num_els = cudf::util::round_up_safe(std::max(split_info.chars_size, in_offsets.size() + 1)/*strings_c.offsets().size()*/, cudf::detail::warp_size);
       constexpr int block_size = 256;
-      cudf::experimental::detail::grid_1d grid{num_els, block_size, 1};            
+      cudf::detail::grid_1d grid{num_els, block_size, 1};            
       if(in.nullable()){
          copy_in_place_strings_kernel<block_size, true><<<grid.num_blocks, block_size, 0, 0>>>(
                            in.size(),                                            // num_rows
@@ -1046,9 +1045,9 @@ struct column_copy_functor {
                                  in.null_mask(), in.null_mask() == nullptr ? UNKNOWN_NULL_COUNT : 0,
                                  in.offset()};
          
-         cudf::size_type num_els = cudf::util::round_up_safe(strings_c.offsets().size(), cudf::experimental::detail::warp_size);
+         cudf::size_type num_els = cudf::util::round_up_safe(strings_c.offsets().size(), cudf::detail::warp_size);
          constexpr int block_size = 256;
-         cudf::experimental::detail::grid_1d grid{num_els, block_size, 1};
+         cudf::detail::grid_1d grid{num_els, block_size, 1};
          if(in.nullable()){
             copy_in_place_kernel<block_size, size_type, true><<<grid.num_blocks, block_size, 0, 0>>>(
                               *column_device_view::create(in_offsets_and_validity), 
@@ -1073,9 +1072,9 @@ struct column_copy_functor {
          CUDF_EXPECTS(chars_col.offset() == 0, "Expected input chars column to have an offset of 0");
          column_view in_chars{ chars_col.type(), static_cast<size_type>(split_info.chars_size), chars_col.data<char>() + split_info.chars_offset };
                                  
-         cudf::size_type num_els = cudf::util::round_up_safe(static_cast<size_type>(split_info.chars_size), cudf::experimental::detail::warp_size);
+         cudf::size_type num_els = cudf::util::round_up_safe(static_cast<size_type>(split_info.chars_size), cudf::detail::warp_size);
          constexpr int block_size = 256;
-         cudf::experimental::detail::grid_1d grid{num_els, block_size, 1};         
+         cudf::detail::grid_1d grid{num_els, block_size, 1};         
          copy_in_place_kernel<block_size, char, false><<<grid.num_blocks, block_size, 0, 0>>>(
                            *column_device_view::create(in_chars),
                            split_info.chars_size,
@@ -1095,9 +1094,9 @@ struct column_copy_functor {
       dst += (split_info.data_size + split_info.validity_size);
 
       // custom copy kernel (which should probably just be an in-place copy() function in cudf.
-      cudf::size_type num_els = cudf::util::round_up_safe(in.size(), cudf::experimental::detail::warp_size);
+      cudf::size_type num_els = cudf::util::round_up_safe(in.size(), cudf::detail::warp_size);
       constexpr int block_size = 256;
-      cudf::experimental::detail::grid_1d grid{num_els, block_size, 1};
+      cudf::detail::grid_1d grid{num_els, block_size, 1};
       
       // so there's a significant performance issue that comes up. our incoming column_view objects
       // are the result of a slice.  because of this, they have an UNKNOWN_NULL_COUNT.  because of that,
@@ -1196,7 +1195,7 @@ contiguous_split_result alloc_and_copy(cudf::table_view const& t, thrust::device
    size_t total_size = 0;
    column_index = 0;
    std::for_each(t.begin(), t.end(), [&total_size, &column_index, &split_info](cudf::column_view const& c){   
-      total_size += cudf::experimental::type_dispatcher(c.type(), column_buffer_size_functor{}, c, split_info[column_index]);
+      total_size += cudf::type_dispatcher(c.type(), column_buffer_size_functor{}, c, split_info[column_index]);
       column_index++;
    });
 
@@ -1209,7 +1208,7 @@ contiguous_split_result alloc_and_copy(cudf::table_view const& t, thrust::device
    out_cols.reserve(t.num_columns());
    column_index = 0;   
    std::for_each(t.begin(), t.end(), [&out_cols, &buf, &column_index, &split_info](cudf::column_view const& c){
-      cudf::experimental::type_dispatcher(c.type(), column_copy_functor{}, c, split_info[column_index], buf, out_cols);
+      cudf::type_dispatcher(c.type(), column_copy_functor{}, c, split_info[column_index], buf, out_cols);
       column_index++;
    });   
    
@@ -1223,7 +1222,7 @@ std::vector<contiguous_split_result> _contiguous_split(cudf::table_view const& i
                                                       rmm::mr::device_memory_resource* mr,
                                                       cudaStream_t stream)
 {   
-   auto subtables = cudf::experimental::split(input, splits);
+   auto subtables = cudf::split(input, splits);
 
    // optimization : for large #'s of splits this allocation can dominate total time
    //                spent if done inside alloc_and_copy().  so we'll allocate it once
@@ -1248,7 +1247,7 @@ std::vector<contiguous_split_result> _contiguous_split(cudf::table_view const& i
                                                       std::vector<size_type> const& splits,
                                                       rmm::mr::device_memory_resource* mr)
 {    
-   return cudf::experimental::detail::_contiguous_split(input, splits, mr, (cudaStream_t)0);   
+   return cudf::detail::_contiguous_split(input, splits, mr, (cudaStream_t)0);   
 }
 
 }; // namespace experimental
@@ -1257,8 +1256,8 @@ std::vector<contiguous_split_result> _contiguous_split(cudf::table_view const& i
 
 #endif
 
+#if 0
 using namespace cudf;
-using namespace cudf::experimental;
 
 namespace {
 std::vector<cudf::size_type> splits_to_indices(std::vector<cudf::size_type> splits, cudf::size_type size){
@@ -1279,7 +1278,7 @@ std::vector<cudf::size_type> splits_to_indices(std::vector<cudf::size_type> spli
     return indices;
 }
 
-void verify_split_results( cudf::experimental::table const& src_table, 
+void verify_split_results( cudf::table const& src_table, 
                            std::vector<contiguous_split_result> const &dst_tables,
                            std::vector<size_type> const& splits,
                            int verbosity = 0)
@@ -1289,7 +1288,7 @@ void verify_split_results( cudf::experimental::table const& src_table,
    int col_count = 0;
    for(size_t c_idx = 0; c_idx<(size_t)src_v.num_columns(); c_idx++){
       // grab this column from each subtable
-      auto src_subcols = cudf::experimental::split(src_v.column(c_idx), splits);
+      auto src_subcols = cudf::split(src_v.column(c_idx), splits);
 
       for(size_t t_idx=0; t_idx<src_subcols.size(); t_idx++){
          cudf::test::expect_columns_equal(src_subcols[t_idx], dst_tables[t_idx].table.column(c_idx), true);
@@ -1333,7 +1332,7 @@ void single_split_test_common(std::vector<T>& src_cols,
    });
    null_count_gen.end();
 
-   cudf::experimental::table src_table(std::move(columns));   
+   cudf::table src_table(std::move(columns));   
    // print_table(src_table);
    printf("# columns : %d\n", (int)num_cols);
    
@@ -1350,7 +1349,7 @@ void single_split_test_common(std::vector<T>& src_cols,
    // do the split
    scope_timer_manual split_time("contiguous_split total");
    split_time.start();   
-   auto dst_tables = cudf::experimental::contiguous_split(src_table.view(), splits, rmm::mr::get_default_resource());
+   auto dst_tables = cudf::contiguous_split(src_table.view(), splits, rmm::mr::get_default_resource());
    cudaDeviceSynchronize();
    split_time.end();
 
@@ -1654,9 +1653,9 @@ void large_split_tests()
    }   
 }
 
-inline std::vector<cudf::experimental::table> create_expected_string_tables(std::vector<std::string> const strings[2], std::vector<cudf::size_type> const& indices, bool nullable) {
+inline std::vector<cudf::table> create_expected_string_tables(std::vector<std::string> const strings[2], std::vector<cudf::size_type> const& indices, bool nullable) {
 
-    std::vector<cudf::experimental::table> result = {};
+    std::vector<cudf::table> result = {};
 
     for(unsigned long index = 0; index < indices.size(); index+=2) {
         std::vector<std::unique_ptr<cudf::column>> cols = {};
@@ -1673,13 +1672,13 @@ inline std::vector<cudf::experimental::table> create_expected_string_tables(std:
             }
         }
 
-        result.push_back(cudf::experimental::table(std::move(cols)));
+        result.push_back(cudf::table(std::move(cols)));
     }
 
     return result;
 }
 
-std::vector<cudf::experimental::table> create_expected_string_tables_for_splits(std::vector<std::string> const strings[2], std::vector<cudf::size_type> const& splits, bool nullable){    
+std::vector<cudf::table> create_expected_string_tables_for_splits(std::vector<std::string> const strings[2], std::vector<cudf::size_type> const& splits, bool nullable){    
     std::vector<cudf::size_type> indices = splits_to_indices(splits, strings[0].size());    
     return create_expected_string_tables(strings, indices, nullable);
 }
@@ -1708,7 +1707,7 @@ void split_test()
    wrapper<double> c2(c2d, c2d + 10);
    columns.push_back(c2.release());
    
-   cudf::experimental::table t(std::move(columns));
+   cudf::table t(std::move(columns));
    print_table(t.view());
 
    std::vector<size_type> splits { 5, 10 };
@@ -1740,12 +1739,12 @@ void split_test()
    wrapper<double> c2(c2d, c2d + 10, c2v);
    columns.push_back(c2.release());
    
-   cudf::experimental::table t(std::move(columns));
+   cudf::table t(std::move(columns));
    print_table(t.view());
 
    std::vector<size_type> splits { 5 };
 
-   auto out = cudf::experimental::contiguous_split(t.view(), splits, rmm::mr::get_default_resource());
+   auto out = cudf::contiguous_split(t.view(), splits, rmm::mr::get_default_resource());
    
    //verify_split_results(t, out, splits, true);           
    
@@ -1764,7 +1763,7 @@ void split_test()
    wrapper<int> c0_w(c0, c0 + num_els);
    std::vector<size_type> splits { 0, 2, 1, 3 };
       
-   auto out = cudf::experimental::slice(c0_w, splits);
+   auto out = cudf::slice(c0_w, splits);
 
    for(size_t idx=0; idx<out.size(); idx++){
       print_column(out[idx]);      
@@ -1776,7 +1775,7 @@ void split_test()
    column_view cv = c->view();   
 
    std::vector<size_type> ssplits { 1, 5 };
-   auto sout = cudf::experimental::slice(cv, ssplits);
+   auto sout = cudf::slice(cv, ssplits);
    
    for(size_t idx=0; idx<sout.size(); idx++){
       print_column(sout[idx]);      
@@ -1795,29 +1794,32 @@ void split_test()
     std::vector<std::unique_ptr<cudf::column>> scols;
     scols.push_back(sw[0].release());
     scols.push_back(sw[1].release());
-    cudf::experimental::table src_table(std::move(scols));
+    cudf::table src_table(std::move(scols));
 
-    std::vector<cudf::size_type> splits{2};
+    std::vector<cudf::size_type> splits{-1};
     
-    std::vector<cudf::experimental::table> expected = create_expected_string_tables_for_splits(strings, splits, true);
+    //std::vector<cudf::table> expected = create_expected_string_tables_for_splits(strings, splits, true);
 
-    auto result = cudf::experimental::contiguous_split(src_table, splits, rmm::mr::get_default_resource());
+    auto result = cudf::contiguous_split(src_table, splits, rmm::mr::get_default_resource());
     
-    EXPECT_EQ(expected.size(), result.size());
+    //EXPECT_EQ(expected.size(), result.size());
 
     for (unsigned long index = 0; index < result.size(); index++) {       
       {
-        bool a = expected[index].get_column(0).nullable();
+        //bool a = expected[index].get_column(0).nullable();
         bool b = result[index].table.column(0).nullable();
 
         printf("---------------------\n");
-        print_table(expected[index]);
+        //print_table(expected[index]);
         print_table(result[index].table);
         printf("---------------------\n");
         // cudf::test::expect_tables_equal(expected[index], result[index].table);
         // cudf::test::expect_tables_equivalent(expected[index], result[index].table);
       }
-    }     
+    }
+
+    int whee = 10;
+    whee++;
 
    /*
     auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return true; });
@@ -1827,7 +1829,7 @@ void split_test()
    
     std::vector<cudf::size_type> splits{2, 5, 9};        
 
-    std::vector<cudf::column_view> result = cudf::experimental::split(*scols, splits);
+    std::vector<cudf::column_view> result = cudf::split(*scols, splits);
 
    size_t idx;
    for(idx=0; idx<result.size(); idx++){
@@ -1835,6 +1837,7 @@ void split_test()
    }
    */
 }
+#endif
 
 /*
 __global__ void int_doubler(int *dst, int *src, int num_els)
@@ -1907,7 +1910,7 @@ void parquet_writer_test()
      
   srand(31337);
   auto table1 = create_random_fixed_table<int>(4, 16, true);
-  auto split_views = cudf::experimental::split(*table1, { 8 });
+  auto split_views = cudf::split(*table1, { 8 });
 
   print_table(*table1);
   print_table(split_views[0]);
@@ -1960,12 +1963,12 @@ void whee()
     auto c4 = cudf::test::fixed_width_column_wrapper<int>(iter4, iter4 + 10, valids);
     cols.push_back(c4.release());
 
-    auto tbl = cudf::experimental::table(std::move(cols));
+    auto tbl = cudf::table(std::move(cols));
     
     std::vector<cudf::size_type> splits{5};
 
-    auto result = cudf::experimental::contiguous_split(tbl, splits);
-    auto expected = cudf::experimental::split(tbl, splits);
+    auto result = cudf::contiguous_split(tbl, splits);
+    auto expected = cudf::split(tbl, splits);
     
     for (unsigned long index = 0; index < expected.size(); index++) {      
       cudf::test::expect_tables_equal(expected[index], result[index].table);
@@ -1974,7 +1977,7 @@ void whee()
 
 /*
 template<typename T>
-std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
+std::unique_ptr<cudf::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
 {       
     auto valids = cudf::test::make_counting_transform_iterator(0, 
         [](auto i) { 
@@ -1996,7 +1999,7 @@ std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_
         ret->has_nulls();
         return ret;
     });
-    return std::make_unique<cudf::experimental::table>(std::move(columns));   
+    return std::make_unique<cudf::table>(std::move(columns));   
 }
 */
 /*
@@ -2010,7 +2013,7 @@ void PQ_write()
     int64_t num_rows = (total_desired_bytes / (num_cols * el_size)) / num_tables;
 
     srand(31337);
-    std::vector<std::unique_ptr<cudf::experimental::table>> tables;        
+    std::vector<std::unique_ptr<cudf::table>> tables;        
     for(cudf::size_type idx=0; idx<num_tables; idx++){
       tables.push_back(create_random_fixed_table<int>(num_cols, num_rows, true));
     }
@@ -2021,7 +2024,7 @@ void PQ_write()
         cudf_io::write_parquet_chunked_args args{cudf_io::sink_info()};
 
         auto state = cudf_io::write_parquet_chunked_begin(args);
-        std::for_each(tables.begin(), tables.end(), [&state](std::unique_ptr<cudf::experimental::table> const& tbl){
+        std::for_each(tables.begin(), tables.end(), [&state](std::unique_ptr<cudf::table> const& tbl){
           cudf_io::write_parquet_chunked(*tbl, state);
         });
         cudf_io::write_parquet_chunked_end(state);
@@ -2033,7 +2036,7 @@ void PQ_write()
 */
 
 /*
-namespace cudf_io = cudf::experimental::io;
+namespace cudf_io = cudf::io;
 
 cudf::test::TempDirTestEnvironment* const temp_env = static_cast<cudf::test::TempDirTestEnvironment*>(
     ::testing::AddGlobalTestEnvironment(new cudf::test::TempDirTestEnvironment));
@@ -2069,7 +2072,7 @@ void json_test()
 
 /*
 template<typename T>
-std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
+std::unique_ptr<cudf::table> create_random_fixed_table(cudf::size_type num_columns, cudf::size_type num_rows, bool include_validity)
 {       
     auto valids = cudf::test::make_counting_transform_iterator(0, 
         [](auto i) { 
@@ -2091,7 +2094,7 @@ std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_
         ret->has_nulls();
         return ret;
     });
-    return std::make_unique<cudf::experimental::table>(std::move(columns));   
+    return std::make_unique<cudf::table>(std::move(columns));   
 }
 */
 
@@ -2099,7 +2102,7 @@ std::unique_ptr<cudf::experimental::table> create_random_fixed_table(cudf::size_
 #include <cudf/io/functions.hpp>
 void parquet_writer_test()
 {
-  namespace cudf_io = cudf::experimental::io;
+  namespace cudf_io = cudf::io;
 
   srand(31337);
   auto table1 = create_random_fixed_table<int>(5, 5, false);
@@ -2128,7 +2131,7 @@ void parquet_writer_test()
 */
 
 /*
-namespace cudf_io = cudf::experimental::io;
+namespace cudf_io = cudf::io;
 
 template <typename T>
 using column_wrapper =
@@ -2136,7 +2139,7 @@ using column_wrapper =
                               cudf::test::strings_column_wrapper,
                               cudf::test::fixed_width_column_wrapper<T>>::type;
 using column = cudf::column;
-using table = cudf::experimental::table;
+using table = cudf::table;
 using table_view = cudf::table_view;
 
 // Global environment for temporary files
@@ -2161,7 +2164,7 @@ void pq()
   auto table1 = create_random_fixed_table<int>(512, 4096, true);
   auto table2 = create_random_fixed_table<int>(512, 8192, true);
   
-  auto full_table = cudf::experimental::concatenate({*table1, *table2});          
+  auto full_table = cudf::concatenate({*table1, *table2});          
 
   auto filepath = temp_env->get_temp_filepath("ChunkedLarge.parquet");
   cudf_io::write_parquet_chunked_args args{cudf_io::sink_info{filepath}};
@@ -2217,7 +2220,7 @@ void custom_sink_example()
 {
   custom_data_sink custom_sink;
 
-  namespace cudf_io = cudf::experimental::io;
+  namespace cudf_io = cudf::io;
 
   srand(31337);
   auto table1 = create_random_fixed_table<int>(5, 5, false);  
@@ -2235,5 +2238,2045 @@ void custom_sink_example()
     cudf_io::write_parquet_args args{cudf_io::sink_info{&custom_sink}, *table1};  
     cudf_io::write_parquet(args);
   }  
+}
+*/
+
+/*
+#include <cudf/io/functions.hpp>
+void parquet_bug()
+{
+   using namespace cudf;   
+
+   cudf::io::read_parquet_args read_args{cudf::io::source_info{"nullstrings.parquet"}};
+   auto result = cudf::io::read_parquet(read_args);
+   int num_columns = result.tbl->num_columns();
+   column_view col = result.tbl->get_column(0);
+   int null_count = result.tbl->get_column(0).null_count();
+   print_table(*result.tbl);
+      
+   int mask_bytes = bitmask_allocation_size_bytes(col.size());
+   int mask_size = mask_bytes / 4;
+   bitmask_type *host_mask = new bitmask_type[mask_size];   
+   cudaMemcpy(host_mask, col.null_mask(), mask_bytes, cudaMemcpyDeviceToHost);
+   int idx;
+   for(idx=0; idx<col.size(); idx++){
+      if(!bit_is_set(host_mask, idx)){
+         printf("NULL at %d\n", idx);
+      }
+   }   
+
+   int whee = 10;
+   whee++;
+}
+*/
+
+/*
+void sequence_test()
+{
+   auto result = cudf:::sequence(0, cudf::numeric_scalar<float>(10), 
+                                                 cudf::numeric_scalar<float>(-6));
+                                                    
+   print_column(*result);  
+
+   int whee = 10;
+   whee++;
+}
+*/
+
+struct UShiftRight {
+    template <typename TypeOut, typename TypeLhs, typename TypeRhs>
+    static TypeOut operate(TypeLhs x, TypeRhs y) {
+        return static_cast<typename std::make_unsigned<TypeLhs>::type>(x) >> y;
+    }
+};
+
+void shift_tests()
+{
+  using T = int;
+  int num_els = 4;
+
+  uint32_t a = (static_cast<std::make_unsigned_t<uint32_t>>(-8) >> 1);
+  printf("%u\n", a);
+  uint32_t b = (static_cast<std::make_unsigned_t<uint32_t>>(78) >> 1);
+  printf("%u\n", b);
+  uint32_t c = (static_cast<std::make_unsigned_t<uint32_t>>(-93) >> 3);
+  printf("%u\n", c);
+  uint32_t d = (static_cast<std::make_unsigned_t<uint32_t>>(0) >> 2);
+  printf("%u\n", d);
+  uint32_t e = (static_cast<std::make_unsigned_t<uint32_t>>(-INT_MAX) >> 16);
+  printf("%u\n", e);
+
+  /*
+  T lhs[]   = { -4, -4, -4, -4 };  
+  wrapper<T> lhs_w(lhs, lhs + num_els);
+
+  T shift[]   = { 1, 1, 1, 1 };  
+  wrapper<T> shift_w(shift, shift + num_els);
+  
+  T expected[]   = { 8, 8, 8, 8 };  
+  wrapper<T> expected_w(expected, expected + num_els);
+
+  auto out = cudf::binary_operation(
+      lhs_w, shift_w, cudf::binary_operator::SHIFT_LEFT,
+      cudf::data_type(cudf::type_to_id<T>()));
+
+  print_column(lhs_w);
+  print_column(expected_w);
+  print_column(*out);
+
+  auto outright = cudf::binary_operation(
+      *out, shift_w, cudf::binary_operator::SHIFT_RIGHT_UNSIGNED,
+      cudf::data_type(cudf::type_to_id<T>()));
+
+  print_column(*outright);  
+  */
+
+  int whee = 10;
+  whee++;
+}
+
+/*
+enum code_type { 
+   UNKNOWN = -1,
+   UPPERCASE,
+   LOWERCASE,
+   TITLECASE,   
+};
+
+struct code_data {
+   code_type   type;
+
+   int         lower;   
+   int         title[3];
+   int         title_len;
+   int         upper[3];
+   int         upper_len;   
+};
+code_data Code_data[65535];
+
+void parse_special_casing()
+{
+   FILE *f = fopen("SpecialCasingUnconditional.txt", "rt");   
+
+   char line[1024];
+   while(!feof(f)){
+      fgets(line, 1023, f);      
+      if(line[0] == '#'){
+         continue;
+      }
+      const char *tok = strtok(line, ";");
+      if(tok == NULL || tok[0] == '\0' || tok[0] == '\n'){
+         continue;
+      }
+
+      int code;
+      sscanf(tok, "%x", &code);
+      code_data *cd = &Code_data[code];
+            
+      int lower;
+      tok = strtok(NULL, ";");
+      sscanf(tok, "%x", &lower);
+      if(lower != cd->lower){
+         printf("Found lowercase mismatch at %x\n", code);
+      }
+      
+      tok = strtok(NULL, ";");
+      int title[3];
+      int title_len = sscanf(tok, "%x %x %x", &title[0], &title[1], &title[2]);
+      if(cd->title_len > 0 && ((title_len != cd->title_len || title[0] != cd->title[0]))){
+         printf("Found titlecase mismatch at %x\n", code);
+      }
+      cd->title_len = title_len; cd->title[0] = title[0]; cd->title[1] = title[1]; cd->title[2] = title[2];
+
+      tok = strtok(NULL, ";");
+      int upper[3];
+      int upper_len = sscanf(tok, "%x %x %x", &upper[0], &upper[1], &upper[2]);
+      if(cd->upper_len > 0 && ((upper_len != cd->upper_len || upper[0] != cd->upper[0]))){
+         // printf("Found uppercase mismatch at %x\n", code);
+      }
+      cd->upper_len = upper_len; cd->upper[0] = upper[0]; cd->upper[1] = upper[1]; cd->upper[2] = upper[2];                    
+   }
+   fclose(f);  
+}
+
+void parse_regular_casing()
+{
+   FILE *f = fopen("SimpleCasing.txt", "rt");   
+
+   char line[1024];
+   while(!feof(f)){
+      fgets(line, 1023, f);      
+      if(line[0] == '#'){
+         continue;
+      }
+
+      code_type type = UNKNOWN;
+      int code;
+      int lower = 0;      
+      int title[3] = { 0 };
+      int title_len = 0;
+      int upper[3] = { 0 };
+      int upper_len = 0;
+
+      const char *start = line;
+      const char *end = strchr(start, ';');
+      int field = 0;
+      while(1){
+         switch(field){
+         case 0:
+            sscanf(start, "%x", &code);
+            break;
+         case 2:
+            if(!strncmp(start, "Lu", 2)){
+               type = UPPERCASE;
+            } else if(!strncmp(start, "Ll", 2)){
+               type = LOWERCASE;
+            } else if(!strncmp(start, "Lt", 2)){
+               type = TITLECASE;
+            }
+            break;
+         case 12:
+            upper_len = sscanf(start, "%x %x %x", &upper[0], &upper[1], &upper[2]);
+            break;
+         case 13:
+            sscanf(start, "%x", &lower);
+            break;         
+         case 14:
+            title_len = sscanf(start, "%x %x %x", &title[0], &title[1], &title[2]);
+            break;
+         default:
+            break;
+         }
+
+         if(code == 0x1b0){
+            int whee = 10;
+            whee++;
+         }         
+
+         if(end == nullptr){
+            break;
+         }               
+
+         field++;
+         start = end+1;
+
+         if(start[0] == '\n'){
+            break;
+         }
+
+         end = strchr(start, ';');
+      }
+
+      // not a codepoint we care about
+      if(type == UNKNOWN){
+         continue;
+      }
+
+      if(code > 65535){
+         continue;         
+      }          
+
+      code_data *cd = &Code_data[code];
+      cd->type = type;
+      switch(cd->type){
+      case UPPERCASE:
+         if(lower == 0){
+            //printf("Uppercase codepoint with no lowercase : %x\n", code);
+         } else {
+            cd->lower = lower;
+            cd->title[0] = title[0]; cd->title[1] = title[1]; cd->title[2] = title[2];
+            cd->title_len = title_len;
+         }         
+         break;
+      case LOWERCASE:
+         if(upper_len == 0){
+            //printf("Lowercase codepoint with no uppercase : %x\n", code);
+         } else { 
+            cd->upper[0] = upper[0]; cd->upper[1] = upper[1]; cd->upper[2] = upper[2];
+            cd->upper_len = upper_len;
+            cd->title[0] = title[0]; cd->title[1] = title[1]; cd->title[2] = title[2];
+            cd->title_len = title_len;
+         }
+         // set lowercase to be myself
+         cd->lower = code;
+         break;
+      case TITLECASE:
+         cd->lower = lower;
+         cd->upper[0] = upper[0]; cd->upper[1] = upper[1]; cd->upper[2] = upper[2];
+         cd->upper_len = upper_len;
+         break;
+      default:
+         break;
+      }      
+      
+      int whee = 10;
+      whee++;
+   }
+   fclose(f);
+}
+
+#include <strings/char_types/char_cases.h>
+void parse_unicode_stuff()
+{
+   int idx;
+   for(idx=0; idx<65535; idx++){
+      Code_data[idx].type = UNKNOWN;
+   }
+   parse_regular_casing();
+   parse_special_casing();   
+}
+*/
+
+// #include <cudf/strings/char_types/char_cases.hpp>
+// cudf::strings::detail::generate_special_mapping_hash_table();
+
+/*
+#include <cudf/binaryop.hpp>
+#include <tests/binaryop/assert-binops.h>
+void binop_test()
+{      
+  using TypeOut = int32_t;
+  using TypeLhs = float;
+  using TypeRhs = float;
+
+  using ADD = cudf::library::operation::Add<TypeOut, TypeLhs, TypeRhs>;
+
+  auto lhs = cudf::test::fixed_width_column_wrapper<float> { 1.3f, 1.6f };
+  auto rhs = cudf::test::fixed_width_column_wrapper<float> { 1.3f, 1.6f };
+    
+  auto out = cudf::binary_operation(
+      lhs, rhs, cudf::binary_operator::ADD,
+      cudf::data_type(cudf::type_to_id<TypeOut>()));
+
+   cudf::test::print(*out);   
+
+  float x = 1.6f;
+  float y = 1.6f;
+  int z = ((int)x + (int)y);
+  int a = (int)(x + y);
+
+  int whee = 10;
+  whee++;
+
+  // ASSERT_BINOP<TypeOut, TypeLhs, TypeRhs>(*out, lhs, rhs, ADD()); 
+}
+*/
+
+#if 0
+template<typename TA, typename... Tail>
+std::unique_ptr<cudf::column> make_nested_column(TA p, Tail... tail);
+
+struct column_builder {
+   // fixed-width
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<cudf::is_fixed_width<ColumnType>()>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t, Tail... tail)
+   {      
+      printf("Child:\n");
+      auto ret = cudf::make_fixed_width_column(std::get<0>(t), std::get<1>(t));
+      cudf::test::print(*ret);
+      return ret;
+   }   
+
+   /*
+   // strings   
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<std::is_same<ColumnType, cudf::string_view>::value>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t, Tail... tail)
+   {      
+      cudf::data_type type = std::get<0>(t);
+      cudf::size_type size = std::get<1>(t);
+      std::vector<std::string> &strings = std::get<2>(t);      
+
+      return{};
+   }
+   */
+      
+   // bogus leaf
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<std::is_same<ColumnType, cudf::list_view>::value>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t)
+   { 
+      CUDF_FAIL("Tried to build a nested structure with a nested type (list) as a leaf node.");      
+   }
+
+   // nesting
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<std::is_same<ColumnType, cudf::list_view>::value>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t, Tail... tail)
+   {
+      printf("Parent:\n");
+      // construct children
+      std::vector<std::unique_ptr<cudf::column>> children;
+      // offsets column
+      children.push_back(make_numeric_column(cudf::data_type{cudf::INT32}, std::get<1>(t)+1, cudf::mask_state::UNALLOCATED));
+      // child column
+      children.push_back(make_nested_column(tail...));
+      
+      // the parent/me. hmm, it's a little weird for us to be setting a size but not actually having a
+      // data buffer.  but that's kind of the new reality in the nested types world.
+      auto ret = std::make_unique<cudf::column>(std::get<0>(t), static_cast<cudf::size_type>(std::get<1>(t)), 
+                                                rmm::device_buffer{}, rmm::device_buffer{}, 
+                                                cudf::UNKNOWN_NULL_COUNT, std::move(children));
+      
+      return ret;
+   }
+
+   // TODO : handle other types (timestamps, strings, structs, etc)
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<!cudf::is_fixed_width<ColumnType>() && 
+                                                                                 !std::is_same<ColumnType, cudf::list_view>::value/* &&
+                                                                                 !std::is_same<ColumnType, cudf::string_view>::value*/>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t, Tail... tail)
+   {
+      return {};
+   }
+};
+
+template<typename TA, typename... Tail>
+std::unique_ptr<cudf::column> make_nested_column(TA p, Tail... tail)
+{      
+   return cudf::type_dispatcher(std::get<0>(p), column_builder{}, p, tail...);
+}
+#endif
+
+#if 0
+template<typename TA, typename... Tail>
+std::unique_ptr<cudf::column> make_nested_column_hierarchy(TA p, Tail... tail);
+
+template <typename ColumnType, class TupleType>
+constexpr inline bool is_string_specialization() {
+   return std::tuple_size<TupleType>::value == 3 && std::is_same<ColumnType, cudf::string_view>::value;
+} 
+
+struct column_builder {   
+   // fixed-width
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<cudf::is_fixed_width<ColumnType>()>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t, Tail... tail)
+   {      
+      printf("Child (fixed):\n");
+      auto ret = cudf::make_fixed_width_column(std::get<0>(t), std::get<1>(t));
+      cudf::test::print(*ret);
+      return ret;
+   }   
+      
+   // strings   
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<is_string_specialization<ColumnType, TA>()>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t, Tail... tail)
+   {      
+      printf("Child (string):\n");
+      cudf::data_type type = std::get<0>(t);
+      cudf::size_type size = std::get<1>(t);
+      std::vector<std::string> &strings = std::get<2>(t);       
+
+      return{};
+   }    
+      
+   // bogus leaf
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<std::is_same<ColumnType, cudf::list_view>::value>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t)
+   { 
+      CUDF_FAIL("Tried to build a nested structure with a nested type (list) as a leaf node.");      
+   }
+
+   // nesting
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<std::is_same<ColumnType, cudf::list_view>::value>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t, Tail... tail)
+   {
+      printf("Parent:\n");
+      // construct children
+      std::vector<std::unique_ptr<cudf::column>> children;
+      // offsets column
+      children.push_back(make_numeric_column(cudf::data_type{cudf::INT32}, std::get<1>(t)+1, cudf::mask_state::UNALLOCATED));
+      // child column
+      children.push_back(make_nested_column_hierarchy(tail...));
+      
+      // the parent/me. hmm, it's a little weird for us to be setting a size but not actually having a
+      // data buffer.  but that's kind of the new reality in the nested types world.
+      auto ret = std::make_unique<cudf::column>(std::get<0>(t), static_cast<cudf::size_type>(std::get<1>(t)), 
+                                                rmm::device_buffer{}, rmm::device_buffer{}, 
+                                                cudf::UNKNOWN_NULL_COUNT, std::move(children));
+      
+      return ret;
+   }
+
+   // TODO : handle other types (timestamps, strings, structs, etc)
+   template<typename ColumnType, typename TA, typename... Tail, std::enable_if_t<!cudf::is_fixed_width<ColumnType>() && 
+                                                                                 !std::is_same<ColumnType, cudf::list_view>::value &&
+                                                                                 !is_string_specialization<ColumnType, TA>()>* = nullptr>
+   std::unique_ptr<cudf::column> operator()(TA t, Tail... tail)
+   {      
+      return {};
+   }
+};
+
+template<typename TA, typename... Tail>
+std::unique_ptr<cudf::column> make_nested_column_hierarchy(TA p, Tail... tail)
+{    
+   return cudf::type_dispatcher(std::get<0>(p), column_builder{}, p, tail...);
+}
+
+void factory_test()
+{   
+   std::vector<std::string> init { "hello" };
+   auto what = make_nested_column_hierarchy(std::tuple<cudf::data_type, cudf::size_type>(cudf::data_type{cudf::LIST}, 1),
+                                    std::tuple<cudf::data_type, cudf::size_type, std::vector<std::string>&>(cudf::data_type{cudf::STRING}, 1, init));
+
+   auto whaaaaat = make_nested_column_hierarchy(std::tuple<cudf::data_type, cudf::size_type>(cudf::data_type{cudf::LIST}, 1),
+                                       std::tuple<cudf::data_type, cudf::size_type>(cudf::data_type{cudf::INT32}, 1));                                    
+}
+#endif
+
+#if 0
+class list_column_wrapper {
+public:   
+/*
+   template<typename TA, typename... Tail>
+   void splat(TA t)
+   {
+      printf("D : %d\n", t.size());
+   }
+
+   template<typename TA, typename... Tail>
+   void splat(TA t, Tail... tail)
+   {
+       printf("C : %d\n", t.size());
+       splat(tail...);
+   }
+   
+   template<typename TA, typename... Tail>
+   void splat(std::initializer_list<TA> t)
+   {
+       printf("B : %d\n", t.size());
+   }
+
+   template<typename TA, typename... Tail>
+   void splat(std::initializer_list<TA> t, std::initializer_list<Tail>... tail)
+   {
+       printf("A : %d\n", t.size());
+       splat(tail...);
+   }
+   */   
+
+   /*
+   template<typename TA, typename... Tail>
+   void splat(std::initializer_list<std::initializer_list<TA>> t, std::initializer_list<std::initializer_list<Tail>>... tail)
+   {
+      printf("LIST : %d\n", t.size());
+      splat(tail...);
+   } 
+   */  
+         
+         /*
+   template<typename... Tail>
+   list_column_wrapper(std::initializer_list<Tail>... tail)
+   {
+      printf("Start\n");
+      splat(tail...);
+   }
+   */  
+   /*
+   template<typename... Tail>
+   list_column_wrapper(std::initializer_list<std::initializer_list<Tail>>... tail)
+   {
+      printf("Start\n");
+      splat(tail...);
+   }
+   */
+
+   template<typename T>
+   void splat(T t)
+   {
+      printf("whee\n");
+   }
+
+   template<typename T, typename... Tail>
+   void splat(std::initializer_list<T> t, std::initializer_list<Tail>... tail)
+   {
+      printf("LIST(%d)\n", t.size());      
+      //std::for_each(t.begin(), t.end(), [this](T t){
+        // splat(t);
+      //});
+   }
+
+   /*
+   template<typename... T>
+   list_column_wrapper(std::initializer_list<T>... t)
+   {
+      printf("Start\n");
+      splat(t...);
+   }
+   */
+
+   int is_list = false;
+   int inside = 0;
+
+   template<typename T>
+   list_column_wrapper(std::initializer_list<T> t)
+   {
+      is_list = false;
+      inside = t.size();
+      printf("Start(%d)\n", t.size());      
+   }
+   
+   list_column_wrapper(std::initializer_list<list_column_wrapper> t)
+   {
+      is_list = true;
+      printf("Start(%d)\n", t.size());
+      std::for_each(t.begin(), t.end(), [](list_column_wrapper w){      
+         bool chk = w.is_list;
+         int whee = w.inside;
+         whee++;
+      });
+   }   
+};
+
+#endif
+
+#if 0
+#include <jit/type.h>
+#include <cudf/concatenate.hpp>
+
+class list_column_wrapper : public cudf::test::detail::column_wrapper {
+public:   
+   template<typename T>
+   list_column_wrapper(std::initializer_list<T> t)
+   {            
+      wrapped = cudf::test::fixed_width_column_wrapper<T>(t).release();      
+      test::print(*wrapped);
+   }
+
+   void build_wrapper(std::initializer_list<list_column_wrapper> t)
+   {
+      // generate offsets column and do some type checking to make sure the user hasn't passed an invalid initializer list      
+      type_id child_id = EMPTY;
+      size_type count = 0;
+      std::vector<size_type> offsetv;
+      std::transform(t.begin(), t.end(), std::back_inserter(offsetv), [&](list_column_wrapper const& l){
+         // verify all children are of the same type (C++ allows you to use initializer
+         // lists that could construct an invalid list column type)
+         if(child_id == EMPTY){
+            child_id = l.wrapped->type().id();
+         } else {
+            CUDF_EXPECTS(child_id == l.wrapped->type().id(), "Malformed list elements");
+         }  
+
+         size_type ret = count;
+         count += l.wrapped->size();
+         return ret;
+      });
+      // add the final offset
+      offsetv.push_back(count);      
+      test::fixed_width_column_wrapper<size_type> offsets(offsetv.begin(), offsetv.end());
+      test::print(offsets);
+
+      // generate final column
+
+      // if the child columns are primitive types, merge them into a new primitive column and make that my child
+      if(child_id != LIST){         
+         // merge data
+         std::vector<column_view> children;
+         std::transform(t.begin(), t.end(), std::back_inserter(children), [&](list_column_wrapper const& l){
+            CUDF_EXPECTS(l.wrapped->type().id() == child_id, "Unexpected type mismatch");
+            return static_cast<column_view>(*l.wrapped);
+         });
+         auto child_data = concatenate(children);         
+
+         test::print(*child_data);         
+         wrapped = make_lists_column(t.size(), offsets.release(), std::move(child_data));
+      } 
+      // if the child columns -are- lists, merge them into a new list column and make that my child
+      else {
+         // TODO :  this should just be cudf::concatenate().  that is, concatenate should support list_views. For now
+         //         this remains as a one-off in here.
+
+         size_type child_list_count = 0;
+         thrust::host_vector<column_device_view> child_offset_columns;
+
+         // merge data. 
+         // also prep data needed for offset merging         
+         std::vector<column_view> children;
+         std::transform(t.begin(), t.end(), std::back_inserter(children), [&](list_column_wrapper const& l){
+            CUDF_EXPECTS(l.wrapped->type().id() == LIST, "Unexpected type mismatch");
+            child_list_count += l.wrapped->size();
+
+            // OFFSET HACK            
+            column_device_view cdv(l.wrapped->child(0), 0, 0);
+            child_offset_columns.push_back(cdv);
+
+            // OFFSET_HACK
+            return static_cast<column_view>(l.wrapped->child(1));
+         });
+         auto child_data = concatenate(children);
+         test::print(*child_data);
+
+         // merge offsets.
+         auto child_offsets = make_fixed_width_column(data_type{INT32}, child_list_count+1);
+         mutable_column_device_view d_child_offsets(*child_offsets, 0, 0);
+         size_type shift = 0;
+         count = 0;
+         std::for_each(child_offset_columns.begin(), child_offset_columns.end(),
+            [&d_child_offsets, &shift, &count](column_device_view const& offsets){
+               thrust::transform(rmm::exec_policy(0)->on(0), 
+                  offsets.begin<size_type>(), 
+                  offsets.end<size_type>(), 
+                  d_child_offsets.begin<size_type>() + count,
+                  [shift] __device__ (size_type offset){                     
+                     return offset + shift;
+                  }
+               );
+               shift += offsets.size();
+               count += offsets.size()-1;
+            }
+
+            // poke the last offset in there
+         );
+         test::print(*child_offsets);
+
+         // make the child list column
+         auto child_list = make_lists_column(child_list_count, std::move(child_offsets), std::move(child_data));
+
+         // now construct me         
+         wrapped = make_lists_column(t.size(), offsets.release(), std::move(child_list));
+      }
+   }
+      
+   list_column_wrapper(std::initializer_list<list_column_wrapper> t)
+   {      
+      build_wrapper(t);      
+   }
+
+   std::string get_column_type_str()
+   {
+      return get_column_type_str(*wrapped);
+   }
+
+protected:  
+   std::string get_column_type_str(cudf::column_view const& view)
+   {                  
+      if(view.type().id() == cudf::LIST){      
+         // OFFSET HACK.  
+         return cudf::jit::get_type_name(view.type()) + "<" + get_column_type_str(view.child(1)) + ">";
+      } 
+      return cudf::jit::get_type_name(view.type());
+   }
+};
+#endif
+
+#if 0
+#include <jit/type.h>
+#include <cudf/concatenate.hpp>
+#include <cudf/lists/lists_column_view.hpp>
+
+void list_test()
+{   
+   // inferred type
+   {            
+      // List<int32>, 1 row
+      test::list_column_wrapper list1 { {0, 1} };
+      test::print(list1);
+      
+      // List<int32>, 4 rows      
+      test::list_column_wrapper list2 { {12, -7, 25}, {0}, {0, -127, 127, 50}, {0} };
+      test::print(list2);
+
+      // List<List<int32>> 1 rows
+      test::list_column_wrapper list3 { {{1, 2}, {3, 4}} };
+      test::print(list3);
+
+      // List<List<int32>> 2 rows
+      test::list_column_wrapper list4 { {{1, 2}, {3, 4}}, {{5, 6, 7}, {0}, {8}} };
+      test::print(list4);
+
+      // List<List<int32>> 3 rows
+      test::list_column_wrapper list5 { {{1, 2}, {3, 4}}, {{5, 6, 7}, {0}, {8}}, {{9, 10}} };
+      test::print(list5);
+
+      // List<List<List<int32>>> 2 rows
+      test::list_column_wrapper list6 { {{{1, 2}, {3, 4}}, {{5, 6, 7}, {0}}}, {{{-1, -2}, {-3, -4}}, {{-5, -6, -7}, {0}}} };
+      test::print(list6);
+   }
+
+   // explicit type
+   {           
+      using T = float;
+      using L = std::initializer_list<T>;
+
+      // List<T>, 1 row      
+      test::list_column_wrapper list1 { L{0, 1} };
+      test::print(list1);
+      
+      // List<T>, 4 rows      
+      test::list_column_wrapper list2 { L{12, -7, 25}, L{0}, L{0, -127, 127, 50}, L{0} };
+      test::print(list2);
+
+      // List<List<T>> 1 rows
+      test::list_column_wrapper list3 { {L{1, 2}, L{3, 4}} };
+      test::print(list3);
+
+      // List<List<T>> 2 rows
+      test::list_column_wrapper list4 { {L{1, 2}, L{3, 4}}, {L{5, 6, 7}, L{0}, L{8}} };
+      test::print(list4);
+
+      // List<List<T>> 3 rows
+      test::list_column_wrapper list5 { {L{1, 2}, L{3, 4}}, {L{5, 6, 7}, L{0}, L{8}}, {L{9, 10}} };
+      test::print(list5);
+
+      // List<List<List<T>>> 2 rows
+      test::list_column_wrapper list6 { {{L{1, 2}, L{3, 4}}, {L{5, 6, 7}, L{0}}}, {{L{-1, -2}, L{-3, -4}}, {L{-5, -6, -7}, L{0}}} };
+      test::print(list6);
+   }
+
+   // string
+   {
+      // List<string>, 1 rows
+      test::list_column_wrapper list1 { {"one", "two"}  };
+      test::print(list1);
+      
+      // List<string>, 4 rows      
+      test::list_column_wrapper list2 { {"one", "two", "three"}, {"four"}, {"five", "six", "seven", "eight"}, {"nine"} };
+      test::print(list2);
+
+      // List<List<string>> 1 rows
+      test::list_column_wrapper list3 { {{"one", "two"}, {"three", "four"}} };
+      test::print(list3);
+
+      // List<List<string>> 2 rows
+      test::list_column_wrapper list4 { {{"one", "two"}, {"three", "four"}}, {{"five", "six", "seven"}, {"eight"}, {"nine"}} };
+      test::print(list4);
+   }
+
+   // inferred type with validity
+   {
+      auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i % 2 == 0 ? true : false; });
+
+      // List<int32>, 1 row      
+      test::list_column_wrapper list1 { {{0, 1}, valids} };
+      test::print(list1);      
+
+      // List<int32>, 4 rows      
+      test::list_column_wrapper list2 { {{12, -7, 25}, valids}, {{0}, valids}, {{0, -127, 127, 50}, valids}, {{0}, valids} };
+      test::print(list2);
+
+      // List<List<int32>> 2 rows
+      test::list_column_wrapper list3 { {{{1, 2}, {3, 4}}, valids}, {{{5, 6, 7}, {0}, {8}}, valids} };
+      test::print(list3);
+   }
+
+   // explicit type with validity
+   {
+      using T = float;
+      using L = std::initializer_list<T>;
+
+      auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i % 2 == 0 ? true : false; });
+
+      // List<int32>, 1 row      
+      test::list_column_wrapper list1 { {L{0, 1}, valids} };
+      test::print(list1);      
+
+      // List<int32>, 4 rows      
+      test::list_column_wrapper list2 { {L{12, -7, 25}, valids}, {L{0}, valids}, {L{0, -127, 127, 50}, valids}, {L{0}, valids} };
+      test::print(list2);
+
+      // List<List<int32>> 2 rows
+      test::list_column_wrapper list3 { {{L{1, 2}, L{3, 4}}, valids}, {{L{5, 6, 7}, L{0}, L{8}}, valids} };
+      test::print(list3);
+   }
+
+   // bogus stuff you can do
+   {
+      test::list_column_wrapper list1 {0, 1};
+      test::print(list1);      
+
+      test::list_column_wrapper list2 ( {0, 1} );
+      test::print(list2);
+
+      auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i % 2 == 0 ? true : false; });
+      test::list_column_wrapper list3 { {0, 1}, valids };
+      test::print(list3);      
+   }
+      /*
+      // List<List<int32>>, 1 rows
+      test::list_column_wrapper_style1 list3 { {{0, 1}, {2, 3, 4}} };
+      test::print(list3);   
+      test::list_column_wrapper_style2 list3a ( {{0, 1}, {2, 3, 4}} );
+      test::print(list3a);
+
+      // List<List<int32>>, 2 rows
+      test::list_column_wrapper_style1 list4 { {{0, 1}, {2, 3, 4}}, {{5, 6}, {7, 8, 9}} };
+      test::print(list4);
+      test::list_column_wrapper_style2 list4a { {{0, 1}, {2, 3, 4}}, {{5, 6}, {7, 8, 9}} };
+      test::print(list4a);
+
+      // List<List<List<int32>>>, 1 row
+      test::list_column_wrapper_style1 list5 { {{{0, 1}, {2, 3, 4}}, {{5, 6}, {7, 8, 9}}} };
+      test::print(list5);
+      test::list_column_wrapper_style2 list5a ( {{{0, 1}, {2, 3, 4}}, {{5, 6}, {7, 8, 9}}, {{11, 12}, {13, 14, 15}}} );
+      test::print(list5a);
+
+      // List<string>, 1 row
+      test::list_column_wrapper_style1 list6 { {"a", "b"} };
+      test::print(list6);
+      test::list_column_wrapper_style2 list6a ( { "a", "b" } );
+      test::print(list6a);
+
+      // List<string>, 2 rows
+      test::list_column_wrapper_style1 list7 { {"a", "b"}, {"c", "d"} };
+      test::print(list7);
+      test::list_column_wrapper_style2 list7a ( { "a", "b" }, {"c", "d"} );
+      test::print(list7a);
+
+      // List<List<string>>, 2 rows
+      test::list_column_wrapper_style1 list8 { {{"a", "b"}, {"c", "d"}}, {{"e", "f"}, {"g", "h"}} };
+      test::print(list8);
+      test::list_column_wrapper_style2 list8a { {{"a", "b"}, {"c", "d"}}, {{"e", "f"}, {"g", "h"}} };
+      test::print(list8a);
+   }
+
+   test::list_column_wrapper_style2 m { {{1, 2}, {3, 4}}, {{5, 6, 7}, {0}, {8}}, {{9, 10}, {11}} };
+   test::print(m);
+
+   test::list_column_wrapper_style2 m2 { {{1, 2}, {3, 4}}, {{5, 6, 7}, {0}, {8}}, {{9, 10}} };
+   test::print(m2);
+      */
+   /*   
+   {
+      auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i % 2 == 0 ? false : true; });
+      auto valids2 = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i % 2 == 0 ? false : true; });
+
+      // validity
+      //test::list_column_wrapper_style1 list1 { {2, 3, 4}, valids };
+      //test::print(list1);
+
+      test::list_column_wrapper_style2 list1 ( {0, 1}, valids );
+
+      test::list_column_wrapper_style2 list1a ( { test::list_column_wrapper_style2({0, 1}, valids),
+                                                test::list_column_wrapper_style2({2, 3, 4}, valids) });
+      test::print(list1a);
+
+      test::list_column_wrapper_style2 list2a ( { test::list_column_wrapper_style2({0, 1}, valids),
+                                                test::list_column_wrapper_style2({2, 3, 4}, valids) }, valids);
+      test::print(list2a);
+
+      test::list_column_wrapper_style2 list3a {
+                                                {test::list_column_wrapper_style2({0, 1}), test::list_column_wrapper_style2({2, 3, 4}) },
+                                                {test::list_column_wrapper_style2({5, 6}), test::list_column_wrapper_style2({7, 8, 9}) }  
+                                              };
+      test::print(list3a);
+
+      test::list_column_wrapper_style2 list4a {
+                                                {{test::list_column_wrapper_style2({0, 1}), test::list_column_wrapper_style2({2, 3, 4})}, valids},
+                                                {{test::list_column_wrapper_style2({5, 6}), test::list_column_wrapper_style2({7, 8, 9})}, valids},
+                                              };
+      test::print(list4a);     
+   }
+   */
+            
+   //test::list_column_wrapper_style2 list3b { test::list_column_wrapper_style2({0, 1}, {2, 3, 4}) };
+         
+   //test::list_column_wrapper_style2 list4a { test::list_column_wrapper_style2({0, 1}, {2, 3, 4}), 
+     //                                        test::list_column_wrapper_style2({5, 6}, {7, 8, 9}) };
+   //test::list_column_wrapper_style2 lista ( {{0, 1}, {2, 3, 4}}, {{5, 6}, {7, 8, 9}} );
+   //test::print(list4a);
+
+   /*
+   test::list_column_wrapper list2 ( {2, 3, 4} );
+   test::print(list2);
+
+   auto cat = concatenate({list1, list2});
+   test::print(*cat);
+
+   test::list_column_wrapper list3 ( {{0, 1}, {2, 3, 4}} );
+   test::print(list3);   
+
+   test::list_column_wrapper list4 { test::list_column_wrapper({0, 1}, {2, 3, 4}), test::list_column_wrapper({5, 6}, {7, 8, 9}) };
+   test::print(list4);   
+   */
+
+   //test::list_column_wrapper list4 { {{0, 1}, {2, 3, 4}}, {{5, 6}, {7, 8, 9}} };
+   //test::print(list4);   
+
+   /*
+   auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i % 2 == 0 ? true : false; });
+   
+   test::list_column_wrapper list6 { test::list_column_wrapper({0, 1}, valids), 
+                                     test::list_column_wrapper({3, 4}, valids) };
+   test::print(list6);
+
+   test::list_column_wrapper list7 ({ test::list_column_wrapper({0, 1}, valids), 
+                                     test::list_column_wrapper({3, 4}, valids) }, valids);
+   test::print(list7);
+   */
+   // test::list_column_wrapper list4 ( {{0, 1}, valids}, {{2, 3, 4}, valids} );
+   // test::print(list4);
+
+   // test::list_column_wrapper list5 ( {2, 3, 4}, valids );
+   // test::print(list5);
+
+   //auto cat2 = concatenate({list4, list5});
+   //test::print(*cat2);
+
+   //test::list_column_wrapper list2( {{0, 1, 2}, {2, 3, 4}} );
+   //test::print(list2);   
+   
+   /*
+   test::list_column_wrapper list2( {2, 3, 4} );
+   test::print(list2);
+   auto cat = concatenate({list1, list2});
+   test::print(*cat);
+   
+   test::list_column_wrapper list3 { {0, 1}, {2, 3, 4} };
+   test::print(list3);
+   */
+
+/*
+   test::list_column_wrapper list4 { {{0, 1}, {2, 3, 4}}, {{5, 6}, {7, 8, 9, 10}} };
+   test::print(list4);
+
+   test::list_column_wrapper list5 { "a", "b" };
+   test::print(list5);
+   test::list_column_wrapper list6 ( { {"ayo", "holup"}, {"wuuut", "whee", "dang"} } );   
+   test::print(list6);
+
+   test::list_column_wrapper list7 { {{{{0, 1}, {2, 3, 4}}, {{4, 5}, {6, 7, 8, 9}}}} };
+   test::print(list7);
+
+   // w/validity
+   auto valids = cudf::test::make_counting_transform_iterator(0, [](auto i) { return i % 2 == 0 ? true : false; });
+   
+   test::list_column_wrapper list100{ {iter, iter+5, valids} };
+   test::print(list100);
+   
+   test::list_column_wrapper list8 { {{1, 2}, valids}, {{3, 4}, valids} } ;   
+   test::print(list8);
+      
+   test::list_column_wrapper list9 { {{{1, 2}, valids}, {{3, 4}, valids}}, {{{5, 6}, valids}, {{7, 8}, valids}} };
+   test::print(list9);
+
+   test::list_column_wrapper list10 { {{"hee", "whats"}, valids}, {{"hoo", "up"}, valids} } ;   
+   test::print(list10);
+
+   test::list_column_wrapper list11 { {{{"hee", "whats"}, valids}, {{"hoo", "up"}, valids}}, {{{"hey", "cash"}, valids}, {{"ho", "money"}, valids}}  };
+   test::print(list11);
+
+   test::list_column_wrapper list12 { {{1, 2}, {3, 4}, {5, 6}}, valids};
+   test::print(list12);
+   
+
+   //list_column_wrapper list1 { {1.0f}, {2.0f, 3.0f}, {4.0f, 5.0f, 6.0f} };
+   //test::print(list1);   
+   
+   //list_column_wrapper list2 { {{1.0f}, {2.0f, 3.0f}}, {{4.0f, 5.0f, 6.0f}} };   
+   //test::print(list2);
+
+   //list_column_wrapper list3 { {{{1.0f}, {2.0f, 3.0f}}, {{4.0f, 5.0f, 6.0f}}} };
+   //test::print(list3);
+   */
+}
+#endif
+
+//#include <tests/utilities/column_wrapper.hpp>
+//#include <cudf/lists/lists_column_view.hpp>
+
+//#include <thrust/transform_scan.h>
+//#include <thrust/binary_search.h>
+
+/*
+template <typename MapItType>
+std::unique_ptr<column> gather_list(lists_column_view const& source_column,
+                                    MapItType gather_map_begin,
+                                    MapItType gather_map_end,
+                                    bool nullify_out_of_bounds = false,
+                                    rmm::mr::device_memory_resource* mr = rmm::mr::get_default_resource(),
+                                    cudaStream_t stream = 0)
+{
+   auto output_count = std::distance(gather_map_begin, gather_map_end);
+   auto offset_count = output_count + 1;    
+   printf("Offset count : %lu\n", offset_count);
+      
+   size_type const* src_offsets{source_column.offsets().data<size_type>()};
+      
+   auto child_offsets = cudf::make_fixed_width_column(data_type{INT32}, offset_count); 
+   mutable_column_view mcv = child_offsets->mutable_view();    
+   size_type* dest_offsets = mcv.data<size_type>();
+
+   // compact offsets.      
+   auto count_iter =  thrust::make_counting_iterator<size_type>(0);
+   thrust::plus<size_type> sum;
+   thrust::transform_exclusive_scan(rmm::exec_policy(stream)->on(stream), count_iter, count_iter + offset_count, dest_offsets, 
+         [gather_map_begin, output_count, src_offsets] __device__ (size_type index) -> size_type {
+         // last offset index is always the previous offset_index + 1, since each entry in the gather map represents
+         // a virtual pair of offsets
+         size_type offset_index = index < output_count ? gather_map_begin[index] : gather_map_begin[index-1] + 1;
+         // the length of this list
+         return src_offsets[offset_index + 1] - src_offsets[offset_index];
+         },
+         0,
+         sum);
+
+   // the size of the gather map for the children is the last offset value (similar to the last offset being the
+   // length of the chars column for a strings column)
+   size_t child_gather_map_size = 7;
+
+   // test::print(*child_offsets);
+
+   // the upper bound for a given span of the output offsets. example:
+   // dest_offsets = {0, 2, 7}
+   // span_upper_bound[0] == 2
+   // span_upper_bound[1] == 7
+   // since the output offsets are compacted, each offset tells us where the indexing boundaries are for the child gather map
+   auto span_upper_bound = thrust::make_transform_iterator(thrust::make_counting_iterator<size_type>(0), [dest_offsets] __device__ (size_type index){
+      return dest_offsets[index+1];
+   });
+   auto child_gather_iter = thrust::make_transform_iterator(thrust::make_counting_iterator<size_type>(0), [span_upper_bound, output_count, dest_offsets, src_offsets, gather_map_begin] __device__ (size_type index){
+      // figure out what span we are in. can't figure out a way around doing it without the upper bound.
+      auto bound = thrust::upper_bound(thrust::device, span_upper_bound, span_upper_bound + output_count, index);      
+      size_type offset_index = thrust::distance(span_upper_bound, bound);
+                  
+      // compute index into the bracket
+      size_type bracket_local_index = offset_index == 0 ? index : index - dest_offsets[offset_index];
+
+      // translate this into the gather index
+      size_type gather_index = bracket_local_index + src_offsets[gather_map_begin[offset_index]];
+      printf("BOUND : %d, %d, %d, %d, %d\n", index, *bound, offset_index, bracket_local_index, gather_index);
+      return gather_index;
+   });   
+   thrust::for_each(rmm::exec_policy(stream)->on(stream), child_gather_iter, child_gather_iter + child_gather_map_size, [] __device__ (size_type gather_index){
+      printf("%d, ", gather_index);
+   });   
+
+   // gather children
+   
+   // recurse on children
+   // auto child = cudf::gather(source_column.child(), 
+   auto child = cudf::make_fixed_width_column(data_type{INT32}, 1); 
+   
+   return make_lists_column(output_count, std::move(child_offsets), std::move(child), 0, rmm::device_buffer{});
+}
+*/
+
+/*
+template <typename MapItType>
+std::unique_ptr<column> gather_list(lists_column_view const& source_column,                                    
+                                    MapItType gather_map_begin,
+                                    MapItType gather_map_end,
+                                    bool nullify_out_of_bounds = false,
+                                    rmm::mr::device_memory_resource* mr = rmm::mr::get_default_resource(),
+                                    cudaStream_t stream = 0)
+   {
+   auto output_count = std::distance(gather_map_begin, gather_map_end);
+   auto offset_count = output_count + 1;    
+   printf("Offset count : %lu\n", offset_count);
+      
+   size_type const* src_offsets{source_column.offsets().data<size_type>()};
+      
+   auto child_offsets = cudf::make_fixed_width_column(data_type{INT32}, offset_count); 
+   mutable_column_view mcv = child_offsets->mutable_view();    
+   size_type* dest_offsets = mcv.data<size_type>();
+
+   // compact offsets. generate new base indices
+   auto count_iter =  thrust::make_counting_iterator<size_type>(0);
+   thrust::plus<size_type> sum;
+   thrust::transform_exclusive_scan(rmm::exec_policy(stream)->on(stream), count_iter, count_iter + offset_count, dest_offsets, 
+         [gather_map_begin, output_count, src_offsets] __device__ (size_type index) -> size_type {
+         // last offset index is always the previous offset_index + 1, since each entry in the gather map represents
+         // a virtual pair of offsets
+         size_type offset_index = index < output_count ? gather_map_begin[index] : gather_map_begin[index-1] + 1;
+         // the length of this list
+         return src_offsets[offset_index + 1] - src_offsets[offset_index];
+         },
+         0,
+         sum);
+   
+   // test::print(*child_offsets);
+
+   // the upper bound for a given span of the output offsets. example:
+   // dest_offsets = {0, 2, 7}
+   // span_upper_bound[0] == 2
+   // span_upper_bound[1] == 7
+   // since the output offsets are compacted, each offset tells us where the indexing boundaries are for the child gather map
+   auto span_upper_bound = thrust::make_transform_iterator(thrust::make_counting_iterator<size_type>(0), [dest_offsets] __device__ (size_type index){
+      return dest_offsets[index+1];
+   });
+   auto child_gather_iter = thrust::make_transform_iterator(thrust::make_counting_iterator<size_type>(0), [span_upper_bound, output_count, dest_offsets] __device__ (size_type index){
+      // figure out what span we are in. can't figure out a way around doing it without the upper bound.
+      auto bound = thrust::upper_bound(thrust::device, span_upper_bound, span_upper_bound + output_count, index);      
+      size_type offset_index = thrust::distance(span_upper_bound, bound);
+                  
+      // compute index into the bracket
+      size_type bracket_local_index = offset_index == 0 ? index : index - dest_offsets[offset_index];
+
+      // translate this into the gather index
+      size_type gather_index = bracket_local_index + base_indices[offset_index];
+      printf("BOUND : %d, %d, %d, %d, %d\n", index, *bound, offset_index, bracket_local_index, gather_index);
+      return gather_index;
+   });         
+   
+   // recurse on children
+   // auto child = cudf::gather(source_column.child(), 
+   auto child = cudf::make_fixed_width_column(data_type{INT32}, 1); 
+   
+   return make_lists_column(output_count, std::move(child_offsets), std::move(child), 0, rmm::device_buffer{});
+}
+*/
+
+/*
+*/
+
+#if 0
+
+/**
+ * @brief `column_wrapper` derived class for wrapping columns of lists.
+ */
+template <typename T>
+class lists_column_wrapper : public detail::column_wrapper {
+ public:       
+ #if 0
+  lists_column_wrapper(std::initializer_list<lists_column_wrapper<T>> elements) : column_wrapper{}
+  {
+    printf("BBB\n");
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](lists_column_wrapper<T> const& w){
+      return static_cast<column_view>(w);
+    });  
+    build(cols, {});
+  }   
+  /*
+  template <typename ValidityIterator>
+  lists_column_wrapper(std::initializer_list<lists_column_wrapper<T>> elements, ValidityIterator v) : column_wrapper{}
+  {
+    printf("DDD\n");
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](lists_column_wrapper<T> const& w){
+      return static_cast<column_view>(w);
+    });  
+    std::vector<bool> validity;
+    std::transform(elements.begin(),
+                   elements.end(),
+                   v,
+                   std::back_inserter(validity),
+                   [](lists_column_wrapper<T> const& l, bool valid) { return valid; });
+    build(cols, validity);
+  }
+  */
+ /*
+  template <typename ValidityIterator>
+  lists_column_wrapper(std::initializer_list<column_wrapper> elements, ValidityIterator v) : column_wrapper{}
+  {
+    printf("DDD\n");
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](lists_column_wrapper<T> const& w){
+      return static_cast<column_view>(w);
+    });  
+    std::vector<bool> validity;
+    std::transform(elements.begin(),
+                   elements.end(),
+                   v,
+                   std::back_inserter(validity),
+                   [](lists_column_wrapper<T> const& l, bool valid) { return valid; });
+    build(cols, validity);
+  }
+  */
+ 
+
+  template <typename Elements = T, std::enable_if_t<cudf::is_fixed_width<Elements>()>* = nullptr>
+  lists_column_wrapper(cudf::test::fixed_width_column_wrapper<T> const& col) : column_wrapper{}
+  {
+    printf("FFF1\n");    
+    build({static_cast<column_view>(col)}, {}); 
+  }    
+  /*
+  template <typename Elements = T, std::enable_if_t<cudf::is_fixed_width<Elements>()>* = nullptr>
+  lists_column_wrapper(std::initializer_list<cudf::test::fixed_width_column_wrapper<T>> elements) : column_wrapper{}
+  {
+    printf("FFF\n");
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](cudf::test::fixed_width_column_wrapper<T> const& col){
+      return static_cast<column_view>(col);
+    });        
+    build(cols, {}); 
+  }
+  */    
+  /*
+  template <typename Elements = T, typename ValidityIterator, std::enable_if_t<cudf::is_fixed_width<Elements>()>* = nullptr>
+  lists_column_wrapper(std::initializer_list<cudf::test::fixed_width_column_wrapper<T>> elements, ValidityIterator v) : column_wrapper{}
+  {
+    printf("GGG\n");
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](cudf::test::fixed_width_column_wrapper<T> const& w){
+      return static_cast<column_view>(w);
+    });  
+    std::vector<bool> validity;
+    std::transform(elements.begin(),
+                   elements.end(),
+                   v,
+                   std::back_inserter(validity),
+                   [](cudf::test::fixed_width_column_wrapper<T> const& l, bool valid) { return valid; });
+    build(cols, validity);
+  } 
+  */     
+  
+  /*
+  template <typename Elements = T, typename std::enable_if_t<!cudf::is_fixed_width<Elements>()>* = nullptr>
+  lists_column_wrapper(cudf::test::strings_column_wrapper && w) : column_wrapper{}
+  {
+    build_from_non_nested(std::move(w.release()));
+  } 
+  */  
+
+  /**
+   * @brief Construct a lists column of nested lists from an initializer list of values
+   * and a validity iterator.
+   *
+   * Example:
+   * @code{.cpp}
+   * // Creates a LIST column with 3 lists
+   * auto validity = make_counting_transform_iterator(0, [](auto i){return i%2;});
+   * // [{0, 1}, NULL, {4, 5}]
+   * lists_column_wrapper l{ {{0, 1}, {2, 3}, {4, 5}, validity} };
+   * @endcode
+   *
+   * Automatically handles nesting
+   * Example:
+   * @code{.cpp}
+   * // Creates a LIST of LIST columns with 2 lists on the top level and
+   * // 4 below
+   * auto validity = make_counting_transform_iterator(0, [](auto i){return i%2;});
+   * // [ {{0, 1}, NULL}, {{4, 5}, NULL} ]
+   * lists_column_wrapper l{ {{{0, 1}, {2, 3}}, validity}, {{{4, 5}, {6, 7}}, validity} };
+   * @endcode
+   *
+   * @param elements The list of elements
+   * @param v The validity iterator
+   */  
+  /*
+  template <typename Elements = T, typename ValidityIterator>
+  lists_column_wrapper(std::initializer_list<lists_column_wrapper<T>> elements, ValidityIterator v)
+  // lists_column_wrapper(std::initializer_list<detail::column_wrapper> elements, ValidityIterator v)
+    : column_wrapper{}
+  {       
+    printf("JJJ\n");
+  
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](lists_column_wrapper<T> const& col){
+      return static_cast<column_view>(col);
+    });        
+    std::vector<bool> validity;
+    std::transform(elements.begin(),
+                   elements.end(),
+                   v,
+                   std::back_inserter(validity),
+                   [](lists_column_wrapper<T> const& l, bool valid) { return valid; });
+    build(cols, validity);     
+  }  
+  */
+ #endif  
+ /*
+  template <typename Elements = T, std::enable_if_t<is_fixed_width<T>()>* = nullptr>
+  lists_column_wrapper(std::initializer_list<T> elements) : column_wrapper{}
+  {
+    printf("1111\n");
+    auto c = cudf::test::fixed_width_column_wrapper<T>(elements).release();
+
+    build({static_cast<column_view>(*c)}, {});
+  }
+  */  
+
+  // template <typename Elements = T, std::enable_if_t<cudf::is_fixed_width<Elements>()>* = nullptr>
+  /*
+  template <std::enable_if_t<is_fixed_width<T>()>* = nullptr>
+  lists_column_wrapper(std::initializer_list<T> elements) : column_wrapper{}
+  {
+    printf("1111\n");
+    auto c = cudf::test::fixed_width_column_wrapper<T>(elements).release();
+    build({static_cast<column_view>(*c)}, {});
+    // root = true;
+  }
+  */ 
+  // template <std::enable_if_t<cudf::is_fixed_width<T>()>* = nullptr>
+  // lists_column_wrapper(cudf::test::fixed_width_column_wrapper<T> const& col)
+  lists_column_wrapper(cudf::test::fixed_width_column_wrapper<T> const&)
+  {
+    printf("FFF1\n");    
+    //build({static_cast<column_view>(col)}, {}); 
+  }  
+  // template <std::enable_if_t<cudf::is_fixed_width<T>()>* = nullptr>  
+  // lists_column_wrapper(std::initializer_list<cudf::test::fixed_width_column_wrapper<T>> elements)
+  lists_column_wrapper(std::initializer_list<cudf::test::fixed_width_column_wrapper<T>>)
+  {
+    printf("FFF\n");
+    /*
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](cudf::test::fixed_width_column_wrapper<T> const& col){
+      return static_cast<column_view>(col);
+    });        
+    build(cols, {}); 
+    */
+  }
+  // template <typename ValidityIterator, std::enable_if_t<cudf::is_fixed_width<T>()>* = nullptr>
+  template<typename ValidityIterator>
+  // lists_column_wrapper(std::initializer_list<cudf::test::fixed_width_column_wrapper<T>> elements, ValidityIterator v)
+  lists_column_wrapper(std::initializer_list<cudf::test::fixed_width_column_wrapper<T>>, ValidityIterator)
+  {
+    printf("GGG\n");
+    /*
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](cudf::test::fixed_width_column_wrapper<T> const& w){
+      return static_cast<column_view>(w);
+    });  
+    std::vector<bool> validity;
+    std::transform(elements.begin(),
+                   elements.end(),
+                   v,
+                   std::back_inserter(validity),
+                   [](cudf::test::fixed_width_column_wrapper<T> const& l, bool valid) { return valid; });
+    build(cols, validity);
+    */
+  } 
+
+  // lists_column_wrapper(std::initializer_list<lists_column_wrapper<T>> elements)
+  lists_column_wrapper(std::initializer_list<lists_column_wrapper<T>>)
+  {
+    printf("2222\n");
+    /*
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](lists_column_wrapper<T> const& col){
+      return static_cast<column_view>(col);
+    });
+    
+    build(cols, {});
+    */
+  }  
+  template <typename ValidityIterator>
+  // lists_column_wrapper(std::initializer_list<lists_column_wrapper<T>> elements, ValidityIterator v)
+  lists_column_wrapper(std::initializer_list<lists_column_wrapper<T>> , ValidityIterator )
+  {
+    printf("DDD\n");
+    /*
+    std::vector<column_view> cols;
+    std::transform(elements.begin(), elements.end(), std::back_inserter(cols), [](lists_column_wrapper<T> const& w){
+      return static_cast<column_view>(w);
+    });  
+    std::vector<bool> validity;
+    std::transform(elements.begin(),
+                   elements.end(),
+                   v,
+                   std::back_inserter(validity),
+                   [](lists_column_wrapper<T> const& l, bool valid) { return valid; });
+    build(cols, validity);
+    */
+  }
+
+  lists_column_wrapper(std::initializer_list<lists_column_wrapper<T>> elements,
+                             std::initializer_list<bool> validity)
+  {
+     printf("AAA\n");
+  }
+
+ private:
+  /**
+   * @brief Initialize as a nested list column composed of other columns (which may themselves be lists)
+   *   
+   *
+   * List<int>      = { 0, 1 }
+   * List<int>      = { {0, 1} }
+   *
+   * while at the same time, allowing further nesting
+   * List<List<int> = { {{0, 1}} }
+   *
+   * @param c Input column to be wrapped
+   *
+   */
+  void build(std::vector<column_view> const& elements,
+                                              std::vector<bool> const& v)
+  {
+    auto valids = cudf::test::make_counting_transform_iterator(
+      0, [&v](auto i) { return v.empty() ? true : v[i]; });
+
+    // preprocess the incoming lists. unwrap any "root" lists and just use their
+    // underlying non-list data.
+    // also, sanity check everything to make sure the types of all the columns are the same
+    std::vector<column_view> cols;
+    type_id child_id = EMPTY;
+    std::transform(elements.begin(),
+                  elements.end(),
+                  std::back_inserter(cols),
+                  [&child_id](column_view const& col) {
+                    // verify all children are of the same type (C++ allows you to use initializer
+                    // lists that could construct an invalid list column type)
+                    if (child_id == EMPTY) {
+                      child_id = col.type().id();
+                    } else {
+                      CUDF_EXPECTS(child_id == col.type().id(), "Mismatched list types");
+                    }
+
+                    return col;
+                  });
+
+    // generate offsets column and do some type checking to make sure the user hasn't passed an
+    // invalid initializer list
+    size_type count = 0;
+    std::vector<size_type> offsetv;
+    std::transform(cols.begin(),
+                  cols.end(),
+                  valids,
+                  std::back_inserter(offsetv),
+                  [&](cudf::column_view const& col, bool valid) {
+                    // nulls are represented as a repeated offset
+                    size_type ret = count;
+                    if (valid) { count += col.size(); }
+                    return ret;
+                  });
+    // add the final offset
+    offsetv.push_back(count);
+    auto offsets =
+      cudf::test::fixed_width_column_wrapper<size_type>(offsetv.begin(), offsetv.end()).release();
+
+    // concatenate them together, skipping data for children that are null
+    std::vector<column_view> children;
+    for (int idx = 0; idx < cols.size(); idx++) {
+      if (valids[idx]) { children.push_back(cols[idx]); }
+    }
+    auto data = concatenate(children);
+
+    // construct the list column
+    wrapped = make_lists_column(
+      cols.size(),
+      std::move(offsets),
+      std::move(data),
+      v.size() <= 0 ? 0 : cudf::UNKNOWN_NULL_COUNT,
+      v.size() <= 0 ? rmm::device_buffer{0} : detail::make_null_mask(v.begin(), v.end()));
+  }
+};
+#endif
+
+#if 0
+void list_slice_test()
+{ 
+  auto valids = cudf::test::make_counting_transform_iterator(
+    0, [](auto i) { return i % 2 == 0 ? true : false; });
+
+  {
+    cudf::test::lists_column_wrapper<int> list{{{{1, 2, 3}, valids}, {4, 5}},
+                                               {{LCW{}, LCW{}, {7, 8}, LCW{}}, valids},
+                                               {{LCW{6}}},
+                                               {{{7, 8}, {{9, 10, 11}, valids}, LCW{}}, valids},
+                                               {{LCW{}, {-1, -2, -3, -4, -5}}, valids},
+                                               {LCW{}},
+                                               {{-10}, {-100, -200}}};
+
+    std::vector<cudf::size_type> splits{1, 3, 4};
+
+    std::vector<cudf::test::lists_column_wrapper<int>> expected;
+    expected.push_back(LCW{{{{1, 2, 3}, valids}, {4, 5}}});
+    expected.push_back(LCW{{{LCW{}, LCW{}, {7, 8}, LCW{}}, valids}, {{LCW{6}}} });
+    expected.push_back(LCW{{{{7, 8}, {{9, 10, 11}, valids}, LCW{}}, valids}});
+    expected.push_back(
+      LCW{{{LCW{}, {-1, -2, -3, -4, -5}}, valids}, {LCW{}}, {{-10}, {-100, -200}}});
+
+    std::vector<cudf::column_view> result = cudf::split(list, splits);
+    EXPECT_EQ(expected.size(), result.size());
+
+    for (unsigned long index = 0; index < result.size(); index++) {
+      cudf::test::print(expected[index]);
+      printf("\n");
+      cudf::test::print(result[index]);
+      printf("\n\n\n");
+      cudf::test::expect_columns_equivalent(expected[index], result[index]);
+    }
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> list{{1, 2, 3},
+                                               {4, 5},
+                                               {6},
+                                               {{7, 8}, valids},
+                                               {9, 10, 11},
+                                               LCW{},
+                                               LCW{},
+                                               {{-1, -2, -3, -4, -5}, valids},
+                                               {-10},
+                                               {{-100, -200}, valids}};
+
+    std::vector<cudf::size_type> splits{0, 1, 4, 5, 6, 9};
+
+    std::vector<cudf::test::lists_column_wrapper<int>> expected;
+    expected.push_back(LCW{});
+    expected.push_back(LCW{{1, 2, 3}});
+    expected.push_back(LCW{{4, 5}, {6}, {{7, 8}, valids}});
+    expected.push_back(LCW{{9, 10, 11}});
+    expected.push_back(LCW{{LCW{}}});
+    expected.push_back(LCW{LCW{}, {{-1, -2, -3, -4, -5}, valids}, {-10}});
+    expected.push_back(LCW{{{-100, -200}, valids}});
+
+    std::vector<cudf::column_view> result = cudf::split(list, splits);
+    EXPECT_EQ(expected.size(), result.size());
+
+    for (unsigned long index = 0; index < result.size(); index++) {
+      cudf::test::print(expected[index]);
+      printf("\n");
+      cudf::test::print(result[index]);
+      printf("\n\n\n");
+      cudf::test::expect_columns_equivalent(expected[index], result[index]);
+    }
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> list{{{{1, 2, 3}, valids}, {4, 5}},
+                                               {{LCW{}, LCW{}, {7, 8}, LCW{}}, valids},
+                                               {{{6}}},
+                                               {{{7, 8}, {{9, 10, 11}, valids}, LCW{}}, valids},
+                                               {{LCW{}, {-1, -2, -3, -4, -5}}, valids},
+                                               {LCW{}},
+                                               {{-10}, {-100, -200}}};
+
+    std::vector<cudf::size_type> splits{1, 3, 4};
+
+    std::vector<cudf::test::lists_column_wrapper<int>> expected;
+    expected.push_back(LCW{{{{1, 2, 3}, valids}, {4, 5}}});
+    expected.push_back(LCW{{{LCW{}, LCW{}, {7, 8}, LCW{}}, valids}, {{{6}}}});
+    expected.push_back(LCW{{{{7, 8}, {{9, 10, 11}, valids}, LCW{}}, valids}});
+    expected.push_back(
+      LCW{{{LCW{}, {-1, -2, -3, -4, -5}}, valids}, {LCW{}}, {{-10}, {-100, -200}}});
+
+    std::vector<cudf::column_view> result = cudf::split(list, splits);
+    EXPECT_EQ(expected.size(), result.size());
+
+    for (unsigned long index = 0; index < result.size(); index++) {
+      cudf::test::expect_columns_equivalent(expected[index], result[index]);
+    }
+  }
+
+
+
+
+  {
+    cudf::test::lists_column_wrapper<int> list{ {{1, 2, 3}, {4, 5}}, 
+                                                {LCW{}, LCW{}, {7, 8}, LCW{}},
+                                                {{LCW{6}}},
+                                                {{7, 8}, {9, 10, 11}, LCW{}}, 
+                                                {LCW{}, {-1, -2, -3, -4, -5}}, 
+                                                {LCW{}},
+                                                {{-10}, {-100, -200}} };
+    
+    std::vector<cudf::size_type> splits{1, 3, 4};
+
+    std::vector<cudf::test::lists_column_wrapper<int>> expected;    
+    expected.push_back(LCW{ {{1, 2, 3}, {4, 5}} });
+    expected.push_back(LCW{ {LCW{}, LCW{}, {7, 8}, LCW{}}, {{LCW{6}}} });
+    expected.push_back(LCW{ {{7, 8}, {9, 10, 11}, LCW{}} });
+    expected.push_back(LCW{ {LCW{}, {-1, -2, -3, -4, -5}}, {LCW{}}, {{-10}, {-100, -200}} });
+    
+    std::vector<cudf::column_view> result = cudf::split(list, splits);
+    EXPECT_EQ(expected.size(), result.size());
+
+    for (unsigned long index = 0; index < result.size(); index++) {
+      cudf::test::print(expected[index]);
+      cudf::test::print(result[index]);
+      cudf::test::expect_columns_equivalent(expected[index], result[index]);
+    }
+  }    
+
+  {    
+    cudf::test::lists_column_wrapper<int> a{0, 1, 2, 3};
+    cudf::test::lists_column_wrapper<int> b{4, 5, 6, 7, 8, 9, 10};
+    cudf::test::lists_column_wrapper<int> expected{{0, 1, 2, 3}, {4, 5, 6, 7, 8, 9, 10}};
+
+    auto result = cudf::concatenate({a, b});
+    cudf::test::print(expected);
+    cudf::test::print(*result);    
+
+    cudf::test::expect_columns_equal(*result, expected);  
+  }
+
+  {
+     auto valids = cudf::test::make_counting_transform_iterator(
+    0, [](auto i) { return i % 2 == 0 ? true : false; });
+  //cudf::test::lists_column_wrapper<int> { {{1, 2, 3}, {4, 5}, {6}, {7, 8}, {9, 10, 11},
+                                          //LCW{}, LCW{}, {-1, -2, -3, -4, -5}, {-10}, {-100, -200}}, valids };
+
+  cudf::test::lists_column_wrapper<int> list{ {1, 2, 3}, {4, 5}, {6}, {7, 8}, {9, 10, 11},
+                                          LCW{}, LCW{}, {-1, -2, -3, -4, -5}, {-10}, {-100, -200} };
+  
+  // std::vector<cudf::size_type> indices{1, 3, 2, 4, 1, 9};
+  std::vector<cudf::size_type> indices{1, 3, 2, 4, 1, 9};
+
+  std::vector<cudf::test::lists_column_wrapper<int>> expected;
+  expected.push_back(LCW{ {4, 5}, {6} });  
+  expected.push_back(LCW{ {6}, {7, 8} });
+  expected.push_back(LCW{ {4, 5}, {6}, {7, 8}, {9, 10, 11}, LCW{}, LCW{}, {-1, -2, -3, -4, -5}, {-10} });
+  
+  std::vector<cudf::column_view> result = cudf::slice(list, indices);
+  cudf::test::print(result[0]);
+  cudf::test::print(result[1]);
+  cudf::test::print(result[2]);
+
+  EXPECT_EQ(expected.size(), result.size());
+
+  for (unsigned long index = 0; index < result.size(); index++) {
+    cudf::test::expect_columns_equal(expected[index], result[index]);
+  }  
+  }
+
+  { 
+    cudf::test::lists_column_wrapper<int> list{ 
+      {{0, 1, 2, 3, 4, 5}, {10, 20}}, 
+      {{6, 7}, {11}},
+      {{7, 8}, {0}}
+    };
+    auto sliced = cudf::split(list, {1});
+    cudf::test::print(list);
+    for(size_t idx=0; idx<sliced.size(); idx++){
+      printf("S %lu\n", idx);
+      cudf::test::print(sliced[idx]); 
+    }
+  }
+
+  { 
+    cudf::test::lists_column_wrapper<int> a{ 
+      {{1, 1, 1}, {2, 2}, {3, 3}},
+      {{4, 4, 4}, {5, 5}, {6, 6}},
+      {{7, 7, 7}, {8, 8}, {9, 9}},
+      {{10, 10, 10}, {11, 11}, {12, 12}},
+    };
+    auto sliced_a = cudf::split(a, {2});
+
+    cudf::test::lists_column_wrapper<int> b{ 
+      {{-1, -1, -1, -1}, {-2}},
+      {{-3, -3, -3, -3}, {-4}},
+      {{-5, -5, -5, -5}, {-6}},
+      {{-7, -7, -7, -7}, {-8}},
+    };
+    auto sliced_b = cudf::split(b, {2});
+
+    auto cat0 = cudf::concatenate({sliced_a[0], sliced_b[0]});
+    cudf::test::print(*cat0);
+
+    auto cat1 = cudf::concatenate({sliced_a[0], sliced_b[1]});
+    cudf::test::print(*cat1);
+
+    auto cat2 = cudf::concatenate({sliced_a[1], sliced_b[0]});
+    cudf::test::print(*cat2);
+    
+    auto cat3 = cudf::concatenate({sliced_a[1], sliced_b[1]});
+    cudf::test::print(*cat3);
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> a{ 
+      {{1, 1, 1}, {2, 2}, {3, 3}},
+      {{4, 4, 4}, {5, 5}, {6, 6}},
+      {{7, 7, 7}, {8, 8}, {9, 9}},
+      {{10, 10, 10}, {11, 11}, {12, 12}},
+      {{-1, -1, -1, -1}, {-2}},
+      {{-3, -3, -3, -3}, {-4}},
+      {{-5, -5, -5, -5}, {-6, -13}},
+      {{-7, -7, -7, -7}, {-8}},
+    };
+    auto sliced_a = cudf::split(a, {3});   
+    cudf::table_view tbl0({sliced_a[0]});
+    cudf::table_view tbl1({sliced_a[1]});
+
+    auto result0 = cudf::gather(tbl0, cudf::test::fixed_width_column_wrapper<int>{1, 2});
+    cudf::test::print(result0->view().column(0));
+
+    auto result1 = cudf::gather(tbl1, cudf::test::fixed_width_column_wrapper<int>{0, 3});
+    cudf::test::print(result1->view().column(0));
+  }
+}
+#endif
+
+#if 0
+void hierarchy_test()
+{  
+  /*
+  // to disambiguate between {} == 0 and {} == List{0}
+  // Also, see note about compiler issues when declaring nested
+  // empty lists in lists_column_wrapper documentation
+  using LCW = cudf::test::lists_column_wrapper<int>;
+  {
+    cudf::test::lists_column_wrapper<int> a;
+    cudf::test::lists_column_wrapper<int> b{4, 5, 6, 7};
+    cudf::test::lists_column_wrapper<int> expected{4, 5, 6, 7};
+
+    auto result = cudf::concatenate({a, b});
+
+    cudf::test::expect_columns_equal(*result, expected);
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> a, b, c;
+    cudf::test::lists_column_wrapper<int> d{4, 5, 6, 7};
+    cudf::test::lists_column_wrapper<int> expected{4, 5, 6, 7};
+
+    auto result = cudf::concatenate({a, b, c, d});
+
+    cudf::test::expect_columns_equal(*result, expected);
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> a{LCW{}};
+    cudf::test::lists_column_wrapper<int> b{4, 5, 6, 7};
+    cudf::test::lists_column_wrapper<int> expected{LCW{}, {4, 5, 6, 7}};
+
+    cudf::test::print(a);
+    cudf::test::print(aa);
+    cudf::test::print(expected);
+
+    auto result = cudf::concatenate({a, b});
+
+    cudf::test::print(*result);
+
+    cudf::test::expect_columns_equal(*result, expected);
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> a, b, c;
+    cudf::test::lists_column_wrapper<int> d{4, 5, 6, 7};
+    cudf::test::lists_column_wrapper<int> expected{LCW{}, LCW{}, LCW{}, {4, 5, 6, 7}};
+
+    auto result = cudf::concatenate({a, b, c, d});
+
+    cudf::test::expect_columns_equal(*result, expected);
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> a{1, 2};
+    cudf::test::lists_column_wrapper<int> b, c;
+    cudf::test::lists_column_wrapper<int> d{4, 5, 6, 7};
+    cudf::test::lists_column_wrapper<int> expected{{1, 2}, LCW{}, LCW{}, {4, 5, 6, 7}};
+
+    auto result = cudf::concatenate({a, b, c, d});
+
+    cudf::test::expect_columns_equal(*result, expected);
+  }
+  /*
+  // #define ELL {empty_list<int>{}}
+  cudf::test::lists_column_wrapper<int>::empty        ELL{};
+
+  {
+     cudf::test::lists_column_wrapper<int> a{
+      {{{0, 1, 2}, ELL}, {{5}, {6, 7}}, {{8, 9}} },
+      {{ELL}, {{17, 18}, {19, 20}} },
+      {{ELL}},
+      { {{50}, {51, 52}}, {{53, 54}, {55, 16, 17}}, {{59, 60}}} };
+
+    cudf::test::lists_column_wrapper<int> b{
+      {{{21, 22}, {23, 24}}, {ELL, {26, 27}}, {{28, 29, 30}}},
+      {{{31, 32}, {33, 34}}, {{35, 36}, {37, 38}, {1, 2}}, {{39, 40}}},
+      {{ELL}} };
+
+    cudf::test::lists_column_wrapper<int> expected{
+      {{{0, 1, 2}, ELL}, {{5}, {6, 7}}, {{8, 9}}},
+      {{ELL}, {{17, 18}, {19, 20}}},
+      {{ELL}},
+      {{{50}, {51, 52}}, {{53, 54}, {55, 16, 17}}, {{59, 60}}},
+      {{{21, 22}, {23, 24}}, {ELL, {26, 27}}, {{28, 29, 30}}},
+      {{{31, 32}, {33, 34}}, {{35, 36}, {37, 38}, {1, 2}}, {{39, 40}}},
+      {{ELL}}};
+
+  }
+  {     
+    // cudf::test::lists_column_wrapper<int> aa{ {{LCW{}}} , {{0, 1}, {2, 3}} };
+    cudf::test::lists_column_wrapper<int> ab{ {{{LCW{}}}} , ELL };
+    cudf::test::print(ab);
+
+    cudf::test::lists_column_wrapper<int> a;
+    cudf::test::print(a); 
+  
+    cudf::test::lists_column_wrapper<int> c{ ELL };
+    cudf::test::print(c);
+
+    cudf::test::lists_column_wrapper<int> d{ LCW{} };
+    cudf::test::print(d); 
+
+    cudf::test::lists_column_wrapper<int> e{ {ELL} };
+    cudf::test::print(e); 
+
+    // cudf::test::lists_column_wrapper<int> e{{EL}};
+    //cudf::test::lists_column_wrapper<int> e{LCW{LCW{}}};
+    //cudf::test::print(e);
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> expected{{{EL}}, {EL}, EL};
+    cudf::test::print(expected);
+
+    std::vector<bool> valids{false};
+    test::lists_column_wrapper<int> list{ {{{EL}}, valids.begin()}, {EL}, EL };
+    cudf::test::print(list);
+  }
+
+  {
+    std::vector<bool> valids{false};
+    cudf::test::lists_column_wrapper<int> a{{{EL}}};
+    cudf::test::lists_column_wrapper<int> b{{EL}};
+    cudf::test::lists_column_wrapper<int> c{EL};
+    auto result = cudf::concatenate({a, b, c});
+
+    cudf::test::lists_column_wrapper<int> expected{{{EL}}, {EL}, EL};
+
+    cudf::test::expect_columns_equal(*result, expected);
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> a{ {{{{{EL}}}}}, std::vector<bool>{false}.begin() };
+    cudf::test::print(a);
+  }
+
+  {
+    cudf::test::lists_column_wrapper<int> a{ {{{{{EL}}}}}, std::vector<bool>{false}.begin() };
+    cudf::test::print(a);    
+    cudf::test::lists_column_wrapper<int> b{ {{{{{EL}}}}}, std::vector<bool>{false}.begin() };
+    cudf::test::print(b);
+    auto c = cudf::concatenate({a, b});
+    cudf::test::print(*c);
+  }
+
+  { 
+    cudf::test::lists_column_wrapper<int> list{ {{{{EL}}}, {}}, std::vector<bool>{false, false}.begin() };
+    cudf::test::print(list);  
+    auto whee = cudf::empty_like(list);
+    cudf::test::print(*whee);  
+  }
+
+  { 
+    cudf::test::lists_column_wrapper<int> list{ {{{{EL}}}}, std::vector<bool>{false}.begin() };
+    cudf::test::print(list);  
+    auto whee = cudf::empty_like(list);
+    cudf::test::print(*whee);  
+  }
+  */
+}
+#endif
+
+#if 0
+void expect_columns_equal_test()
+{
+  /*
+  cudf::test::fixed_width_column_wrapper<int> a { 1, 2, 3, 4, 5, 6 };
+  cudf::test::fixed_width_column_wrapper<int> b { 1, 2, 3, 4, 5, 6 };
+  cudf::test::expect_columns_equal(a, b);
+  
+  cudf::test::list_column_wrapper lista { {{0, 1}, {2, 3}}, {{4}, {6, 7, 8}} };
+  cudf::test::list_column_wrapper listb { {{0, 1}, {2, 3}}, {{4}, {6, 7, 8}} };
+  cudf::test::expect_columns_equal(lista, listb);
+  */
+
+ /*
+  
+  test::list_column_wrapper list{
+      {{{1, 2}, {3, 4}}, valids}, {{{5, 6, 7}, {0}, {8}}, valids}, {{{9, 10}}, valids}};
+  cudf::test::print(list);
+  */
+ auto valids = cudf::test::make_counting_transform_iterator(
+    0, [](auto i) { return i % 2 == 0 ? true : false; });
+
+  // test::lists_column_wrapper list{ {{{1, 2}, {3, 4}}, valids}, {{{5, 6}, {7, 8}}, valids} };
+  {
+    test::lists_column_wrapper list{ {{12, -7, 25}, {0}, {0, -127, 127, 50}}, valids };
+    test::print(list);
+  }
+
+  {
+    test::lists_column_wrapper list{ {{1, 2}, {3, 4}}, {{{5, 6, 7}, {0}, {8}}, valids}, {{9, 10}} };
+    //test::lists_column_wrapper a{ {{5, 6, 7}, {0}, {8}}, valids };
+    //test::lists_column_wrapper b{ {9, 10} };
+    //auto list = cudf::concatenate({a, b});
+    test::print(list);
+  }
+}
+#endif
+
+#if 0
+void parquet_speed_test()
+{
+  namespace cudf_io = cudf::io;
+    
+  using column         = cudf::column;
+  using table          = cudf::table;
+  using table_view     = cudf::table_view;
+  using TypeParam = int;
+
+  {
+    std::vector<char> mm_buf;
+    mm_buf.reserve(4 * 1024 * 1024 * 16);
+    custom_test_memmap_sink<false> custom_sink(&mm_buf);
+
+    namespace cudf_io = cudf::io;
+
+    // exercises multiple rowgroups
+    srand(31337);
+    auto expected = create_compressible_fixed_table<int>(16, 4 * 1024 * 1024, 6, false);
+
+    // write out using the custom sink (which uses device writes)
+    cudf_io::write_parquet_args args{cudf_io::sink_info{&custom_sink}, *expected};
+    cudf_io::write_parquet(args);
+
+    cudf_io::read_parquet_args custom_args{cudf_io::source_info{mm_buf.data(), mm_buf.size()}};
+    //auto custom_tbl = cudf_io::read_parquet(custom_args);
+    //expect_tables_equal(custom_tbl.tbl->view(), expected->view());
+  }
+
+  {
+    std::vector<char> mm_buf;
+    mm_buf.reserve(4 * 1024 * 1024 * 16);
+    custom_test_memmap_sink<false> custom_sink(&mm_buf);
+
+    namespace cudf_io = cudf::io;
+
+    // exercises multiple rowgroups
+    srand(31337);
+    auto expected = create_compressible_fixed_table<int>(16, 4 * 1024 * 1024, 6, true);
+
+    // write out using the custom sink (which uses device writes)
+    cudf_io::write_parquet_args args{cudf_io::sink_info{&custom_sink}, *expected};
+    cudf_io::write_parquet(args);
+
+    cudf_io::read_parquet_args custom_args{cudf_io::source_info{mm_buf.data(), mm_buf.size()}};
+    auto custom_tbl = cudf_io::read_parquet(custom_args);
+    expect_tables_equal(custom_tbl.tbl->view(), expected->view());
+  }
+}
+#endif
+
+/*
+struct chunk_row_output_iter : public thrust::iterator_facade<chunk_row_output_iter, int32_t, thrust::device_system_tag, thrust::forward_device_iterator_tag, int32_t&, int32_t> {
+  PageInfo *p;      
+  __host__ __device__ chunk_row_output_iter(PageInfo *_p){p = _p;}
+  //__host__ __device__ chunk_row_output_iter() {}
+  // __host__ __device__ chunk_row_output_iter(chunk_row_output_iter const& iter) { p = iter.p; }
+private:
+  friend class thrust::iterator_core_access;  
+  __host__ __device__ void advance(size_type n) { p += n; }
+  __host__ __device__ void increment() { p++; }
+  __device__ reference dereference() const { return p->chunk_row; }
+};
+
+struct start_offset_output_iterator : public thrust::iterator_facade<start_offset_output_iterator, int32_t, thrust::device_system_tag, thrust::forward_device_iterator_tag, int32_t&, int32_t> {
+  PageInfo *p;
+  int col_index;
+  int nesting_depth;
+  int32_t empty;
+  __host__ __device__ start_offset_output_iterator(PageInfo *_p, int _col_index, int _nesting_depth){
+    p = _p;
+    col_index = _col_index;
+    nesting_depth = _nesting_depth;      
+  }
+private:
+  friend class thrust::iterator_core_access;  
+  __host__ __device__ void advance(size_type n) { p = p + n; }
+  __host__ __device__ void increment() { p = p + 1; }
+  __device__ reference dereference() const { 
+    if (p->column_idx != col_index || p->flags & PAGEINFO_FLAGS_DICTIONARY) { 
+      return const_cast<int32_t&>(empty);
+    }
+    return p->nesting[nesting_depth].page_start_value; 
+  }
+};
+*/
+
+/*
+void print_names(std::vector<column_name_info> const &schema_info, std::string const& indent = "")
+{
+  for(size_t idx=0; idx<schema_info.size(); idx++){
+    printf("%s%s\n", indent.c_str(), schema_info[idx].name.c_str());
+    print_names(schema_info[idx].children, indent + "   ");
+  }
 }
 */

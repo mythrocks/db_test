@@ -1,15 +1,18 @@
 {
 	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"path": "/usr/local/cuda-10.1/targets/x86_64-linux/include/thrust"
-		},
-		{
-			"path": "/home/dbaranec/projects/cudf2/cpp"
-		}
-	],
+      {
+         "path": "."
+      },
+      {
+         "path": "/usr/local/cuda-10.1/targets/x86_64-linux/include/thrust"
+      },
+      {
+         "path": "/home/dbaranec/projects/cudf2/cpp"
+      },
+      {
+         "path": "../cudf2/python"
+      }
+   ],
    "settings": {
       "files.associations": {
          "*.cu": "cpp",
@@ -124,7 +127,11 @@
          "memory_resource": "cpp",
          "simd": "cpp",
          "__functional_base_03": "cpp",
-         "__memory": "cpp"
+         "__memory": "cpp",
+         "*.jit": "cpp",
+         "__atomic_derived": "cpp",
+         "__atomic_generated": "cpp",
+         "cfloat": "cpp"
       }
    }
 }
